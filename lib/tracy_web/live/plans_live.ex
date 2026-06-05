@@ -68,14 +68,23 @@ defmodule TracyWeb.PlansLive do
         total={@total}
       />
 
-      <div class="space-y-4 pb-8">
+      <div :if={@total > 0} class="space-y-4 pb-8">
         <.plans_section
           :for={status <- section_order(@include_terminal)}
+          :if={Map.get(@grouped, status, []) != []}
           status={status}
           plans={Map.get(@grouped, status, [])}
           collapsed?={status in ["done", "canceled"]}
         />
       </div>
+
+      <.empty_state :if={@total == 0} />
+
+      <p class="mt-6 text-center text-xs text-base-content/40">
+        Plans are created from the boardroom: type
+        <code class="rounded bg-base-200 px-1.5 py-0.5 text-base-content/70">/save-as-plan</code>
+        after a conversation.
+      </p>
     </Layouts.app>
     """
   end
@@ -127,15 +136,11 @@ defmodule TracyWeb.PlansLive do
         </span>
       </summary>
 
-      <ul :if={@plans != []} class="divide-y divide-base-300/40 border-t border-base-300/40">
+      <ul class="divide-y divide-base-300/40 border-t border-base-300/40">
         <li :for={plan <- @plans}>
           <.plan_row plan={plan} />
         </li>
       </ul>
-
-      <div :if={@plans == []} class="px-4 py-6 text-center text-xs text-base-content/40">
-        Nothing here.
-      </div>
     </details>
     """
   end
@@ -146,30 +151,44 @@ defmodule TracyWeb.PlansLive do
     ~H"""
     <.link
       navigate={~p"/plans/#{@plan.id}"}
-      class="block px-4 py-3 transition-colors hover:bg-base-300/30 focus:bg-base-300/40 focus:outline-none active:bg-base-300/60"
+      class="flex items-center gap-2 px-4 py-3 transition-colors hover:bg-base-300/30 focus:bg-base-300/40 focus:outline-none active:bg-base-300/60"
     >
-      <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0 flex-1">
-          <p class="truncate text-sm font-medium text-base-content sm:text-base">
-            {@plan.title}
-          </p>
-          <p :if={@plan.project} class="mt-0.5 truncate text-[10px] uppercase tracking-wider text-base-content/50">
-            {@plan.project}
-          </p>
-          <p :if={@plan.brief} class="mt-1 line-clamp-2 text-xs text-base-content/70 sm:text-sm">
-            {@plan.brief}
-          </p>
-        </div>
-        <div class="flex shrink-0 flex-col items-end gap-1">
-          <span class="text-[10px] tabular-nums text-base-content/50">
-            {format_relative(@plan.updated_at)}
-          </span>
-          <span :if={Enum.any?(@plan.tasks)} class="text-[10px] text-base-content/40">
-            {Enum.count(@plan.tasks, &(&1.status == "done"))}/{length(@plan.tasks)} tasks
-          </span>
-        </div>
+      <div class="min-w-0 flex-1">
+        <p class="truncate text-sm font-medium text-base-content sm:text-base">
+          {@plan.title}
+        </p>
+        <p :if={@plan.project} class="mt-0.5 truncate text-[10px] uppercase tracking-wider text-base-content/50">
+          {@plan.project}
+        </p>
+        <p :if={@plan.brief} class="mt-1 line-clamp-2 text-xs text-base-content/70 sm:text-sm">
+          {@plan.brief}
+        </p>
       </div>
+      <div class="flex shrink-0 flex-col items-end gap-1 text-right">
+        <span class="text-[10px] tabular-nums text-base-content/50">
+          {format_relative(@plan.updated_at)}
+        </span>
+        <span :if={Enum.any?(@plan.tasks)} class="text-[10px] text-base-content/40">
+          {Enum.count(@plan.tasks, &(&1.status == "done"))}/{length(@plan.tasks)} tasks
+        </span>
+      </div>
+      <.icon name="hero-chevron-right-mini" class="size-4 shrink-0 text-base-content/30" />
     </.link>
+    """
+  end
+
+  defp empty_state(assigns) do
+    ~H"""
+    <div class="mx-auto max-w-md rounded-box border border-dashed border-base-300/60 bg-base-200/20 px-6 py-12 text-center">
+      <.icon name="hero-squares-2x2" class="mx-auto size-8 text-primary/60" />
+      <h2 class="mt-3 text-sm font-semibold text-base-content">No plans yet</h2>
+      <p class="mt-1 text-xs text-base-content/60">
+        Plans get created from the boardroom — chat with Tracy, then type <code class="rounded bg-base-300/60 px-1.5 py-0.5 text-base-content/80">/save-as-plan</code> to capture the conversation.
+      </p>
+      <.link navigate={~p"/boardroom"} class="btn btn-primary btn-sm mt-4">
+        <.icon name="hero-chat-bubble-left-right-mini" class="size-4" /> Open the boardroom
+      </.link>
+    </div>
     """
   end
 
