@@ -60,6 +60,8 @@ defmodule TracyWeb.Router do
     live_session :authenticated,
       on_mount: [{TracyWeb.UserAuth, :require_authenticated}] do
       live "/boardroom", BoardroomLive
+      live "/plans", PlansLive
+      live "/plans/:id", PlanLive.Show
     end
 
     get "/users/settings", UserSettingsController, :edit

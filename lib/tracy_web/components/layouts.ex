@@ -96,9 +96,9 @@ defmodule TracyWeb.Layouts do
       aria-label="Primary"
     >
       <ul class="mx-auto grid max-w-md grid-cols-4 px-2 pt-1">
-        <.tab_link to={~p"/boardroom"} icon="hero-squares-2x2" label="Plans" />
-        <.tab_link to={~p"/boardroom"} icon="hero-bolt" label="Active" />
+        <.tab_link to={~p"/plans"} icon="hero-squares-2x2" label="Plans" />
         <.tab_link to={~p"/boardroom"} icon="hero-chat-bubble-left-right" label="Chat" />
+        <.tab_link to={~p"/boardroom"} icon="hero-bolt" label="Active" />
         <.tab_link to={~p"/users/settings"} icon="hero-cog-6-tooth" label="Settings" />
       </ul>
     </nav>
