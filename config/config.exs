@@ -27,6 +27,12 @@ config :tracy,
 # Register the pgvector Postgrex extension so the `vector` column type works in Ecto.
 config :tracy, Tracy.Repo, types: Tracy.PostgresTypes
 
+# Default LLM adapter. Stub for dev/test/CI; flip to Tracy.LLM.Claude in
+# runtime.exs once `claude setup-token` has produced an OAuth token.
+config :tracy, Tracy.LLM,
+  adapter: Tracy.LLM.Stub,
+  default_model: "stub"
+
 # Swoosh: local-only mail in dev (/dev/mailbox), no SMTP. Prod adapter set in runtime.exs if/when needed.
 config :tracy, Tracy.Mailer, adapter: Swoosh.Adapters.Local
 config :swoosh, :api_client, false
