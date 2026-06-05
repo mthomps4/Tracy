@@ -12,7 +12,16 @@ export PORT="4000"
 # Claude Agent SDK (which uses your `claude setup-token` OAuth session).
 #
 # export TRACY_LLM_ADAPTER="claude"
-# export TRACY_CLAUDE_MODEL="sonnet"      # or "opus", "haiku", or a full id
+# export TRACY_CLAUDE_MODEL="sonnet"
+
+# ── Worker adapter ─────────────────────────────────────────────────────────
+# Default (unset) is Tracy.Workers.Stub — safe for dev/test, no SDK spend.
+# Set to "claude" to make every Dispatch click spawn a real `claude -p`
+# subprocess that does actual work (reads/edits/runs files in the project).
+# Workers get a wider tool surface than the boardroom (incl. Edit, Write,
+# Bash) — they're meant to *do* the work, not just plan it.
+#
+# export TRACY_WORKERS_ADAPTER="claude"      # or "opus", "haiku", or a full id
 
 # ── Anthropic auth (very important) ─────────────────────────────────────────
 # Tracy uses your Claude *subscription* via the OAuth session created by

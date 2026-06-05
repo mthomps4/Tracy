@@ -44,6 +44,29 @@ case System.get_env("TRACY_LLM_ADAPTER") do
     :ok
 end
 
+# ----------------------------------------------------------------------------
+# Worker adapter selection
+# ----------------------------------------------------------------------------
+# TRACY_WORKERS_ADAPTER controls the default worker backend. When set to
+# "claude", new dispatches spawn real `claude -p` subprocesses via
+# Tracy.Workers.Claude. Otherwise Tracy.Workers.Stub stays the default —
+# safe for tests, CI, and local iteration where you don't want to spend
+# SDK credits on every "Dispatch" click.
+#
+# Per-role overrides can be added via :per_role in config (e.g. only the
+# Engineer role uses real Claude while other roles stay Stub).
+case System.get_env("TRACY_WORKERS_ADAPTER") do
+  "claude" ->
+    config :tracy, Tracy.Workers,
+      default_adapter: Tracy.Workers.Claude,
+      per_role: %{}
+
+  _ ->
+    config :tracy, Tracy.Workers,
+      default_adapter: Tracy.Workers.Stub,
+      per_role: %{}
+end
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||
