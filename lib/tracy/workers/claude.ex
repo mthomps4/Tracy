@@ -261,11 +261,13 @@ defmodule Tracy.Workers.Claude do
   defp parse_proposed_line(line) do
     case Regex.run(~r/^\s*[-*]\s*\[([^\]]+)\]\s*(.+)$/, line) do
       [_, role, rest] ->
-        # Split title from brief on " — " (em dash) or " - " (hyphen).
+        # Split title from brief on the first ' — ' (em dash), ' – ' (en dash),
+        # or ' - ' (hyphen). Using String.split with a separator list because
+        # Elixir's PCRE character class for em-dash is unreliable.
         {title, brief} =
-          case Regex.split(~r/\s+[—–-]\s+/, rest, parts: 2) do
-            [t, b] -> {String.trim(t), String.trim(b)}
-            [t] -> {String.trim(t), ""}
+          case String.split(rest, [" — ", " – ", " - "], parts: 2) do
+            [t, b] -> {clean_title(t), String.trim(b)}
+            [t] -> {clean_title(t), ""}
           end
 
         role = role |> String.downcase() |> String.trim()
@@ -279,5 +281,14 @@ defmodule Tracy.Workers.Claude do
       _ ->
         nil
     end
+  end
+
+  # Strip surrounding markdown bold (** ... **) and trim. Keeps titles
+  # readable as list-row entries instead of '**D-1.1a Foo**'.
+  defp clean_title(text) do
+    text
+    |> String.trim()
+    |> String.replace(~r/^\*\*(.+)\*\*$/, "\\1")
+    |> String.trim()
   end
 end

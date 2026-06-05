@@ -122,16 +122,40 @@ defmodule Tracy.Workers.Server do
     |> Enum.map(fn {task_attrs, position} ->
       attrs =
         task_attrs
+        |> normalize_task_attrs()
         |> Map.put(:plan_id, plan_id)
         |> Map.put(:position, position)
         |> Map.put(:status, "backlog")
 
       case Plans.create_task(attrs) do
-        {:ok, t} -> t
-        _ -> nil
+        {:ok, t} ->
+          t
+
+        {:error, cs} ->
+          require Logger
+          Logger.warning(
+            "Tracy.Workers.Server: failed to insert spawned task — #{inspect(cs.errors)} attrs=#{inspect(Map.take(attrs, [:title, :role]))}"
+          )
+          nil
       end
     end)
     |> Enum.reject(&is_nil/1)
+  end
+
+  # Defensive: when the worker's report came back through JSON (stored on the
+  # task) the keys are strings. Atomise so Plans.create_task gets the shape
+  # its changeset expects. Also truncate the title if a worker over-shares.
+  defp normalize_task_attrs(attrs) do
+    title =
+      (attrs[:title] || attrs["title"] || "")
+      |> to_string()
+      |> String.slice(0, 200)
+
+    %{
+      role: attrs[:role] || attrs["role"],
+      title: title,
+      brief: attrs[:brief] || attrs["brief"] || ""
+    }
   end
 
   defp fail(state, reason) do
