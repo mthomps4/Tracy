@@ -60,6 +60,40 @@ defmodule Tracy.Memory do
     |> Repo.all()
   end
 
+  @doc """
+  Rehydrate a boardroom session's conversation history from recorded episodes.
+
+  Returns a list of `Tracy.LLM.Message` structs in chronological order, ready
+  to seed a fresh `Tracy.Session.Server`. Filters to episodes with
+  `source: "session"` and a `role` metadata key (user or assistant).
+
+  Until the Episode schema gains a `session_id` column, this returns the
+  N most recent session episodes globally — fine for single-user v1.
+  """
+  def session_history(opts \\ []) do
+    limit = Keyword.get(opts, :limit, 50)
+
+    Episode
+    |> where([e], e.source == "session")
+    |> where([e], fragment("? \\? 'role'", e.metadata))
+    |> order_by([e], desc: e.occurred_at)
+    |> limit(^limit)
+    |> Repo.all()
+    |> Enum.reverse()
+    |> Enum.map(&episode_to_message/1)
+  end
+
+  defp episode_to_message(%Episode{body: body, metadata: %{"role" => role_str}}) do
+    role =
+      case role_str do
+        "assistant" -> :assistant
+        "system" -> :system
+        _ -> :user
+      end
+
+    %Tracy.LLM.Message{role: role, content: body, metadata: %{}}
+  end
+
   # ---- facts ------------------------------------------------------------
 
   @doc """

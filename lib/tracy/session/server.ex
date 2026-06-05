@@ -73,13 +73,36 @@ defmodule Tracy.Session.Server do
 
   @impl true
   def init(opts) do
+    messages =
+      case Keyword.get(opts, :messages) do
+        nil -> rehydrate_messages(opts)
+        explicit -> explicit
+      end
+
     state = %__MODULE__{
       id: Keyword.fetch!(opts, :id),
       current_project: Keyword.get(opts, :project),
-      messages: Keyword.get(opts, :messages, [])
+      messages: messages
     }
 
     {:ok, state, @idle_timeout}
+  end
+
+  # Rebuild conversation history from past session Episodes so a restart of
+  # the BEAM (or the GenServer's 30-min idle timeout) doesn't wipe the chat.
+  # Caller can opt out by passing `rehydrate: false`.
+  defp rehydrate_messages(opts) do
+    if Keyword.get(opts, :rehydrate, true) do
+      limit = Keyword.get(opts, :rehydrate_limit, 50)
+
+      try do
+        Tracy.Memory.session_history(limit: limit)
+      rescue
+        _ -> []
+      end
+    else
+      []
+    end
   end
 
   @impl true
