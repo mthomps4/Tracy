@@ -33,13 +33,30 @@ defmodule Tracy.LLM.Claude do
   - **Streaming falls back to chat + single chunk** for now. Real per-token
     streaming via `ClaudeAgentSDK.Streaming` is a follow-up.
 
+  ## Tool surface (v1)
+
+  Until Phase 2 builds the worker dispatch / approval layer, the boardroom
+  is also where exploratory work happens. The adapter enables a **read-only
+  tool subset** so Claude can actually investigate the codebase without
+  giving the chat unrestricted write access:
+
+      Read, Grep, Glob, WebSearch, WebFetch
+
+  Bash, Edit, Write are intentionally NOT in the allowlist — destructive
+  actions still go through Matt. `permission_mode: :bypass_permissions`
+  is safe here because the allowlist already caps the blast radius to reads.
+
+  When workers land in Phase 2, those get the full tool surface in
+  worktrees with proper approval gating; the boardroom can stay
+  conversationally focused.
+
   Behaviour: `Tracy.LLM`.
   """
   @behaviour Tracy.LLM
 
   require Logger
 
-  alias ClaudeAgentSDK.{ContentExtractor, Options}
+  alias ClaudeAgentSDK.Options
   alias Tracy.Billing
   alias Tracy.LLM.Message
 
@@ -86,17 +103,44 @@ defmodule Tracy.LLM.Claude do
     end)
   end
 
+  @read_only_tools ~w(Read Grep Glob WebSearch WebFetch)
+  @max_turns 20
+
   defp build_options(opts) do
     model = Keyword.get(opts, :model) || Tracy.LLM.default_model()
 
     %Options{
       model: model,
-      max_turns: 1,
-      output_format: :json
+      max_turns: @max_turns,
+      output_format: :json,
+      allowed_tools: @read_only_tools,
+      permission_mode: :bypass_permissions,
+      append_system_prompt: system_prompt_addendum()
     }
   rescue
-    # Options struct fields can vary by SDK version; fall back to defaults.
-    _ -> %Options{}
+    # Options struct fields can vary by SDK version; fall back to a leaner
+    # config that the older field set is guaranteed to support.
+    _ ->
+      %Options{model: Keyword.get(opts, :model) || Tracy.LLM.default_model(), max_turns: @max_turns}
+  end
+
+  defp system_prompt_addendum do
+    """
+    You are speaking to Matt in the Tracy boardroom — a Phoenix LiveView chat
+    interface, not a terminal. He's running you for strategic help: planning,
+    investigation, design review.
+
+    Tools available to you in this surface: #{Enum.join(@read_only_tools, ", ")}.
+    You can Read files, Grep/Glob across the codebase, WebSearch and WebFetch.
+    Bash, Edit, and Write are NOT available here — when work needs to mutate
+    files or run commands, propose it in chat and Matt will run it himself
+    (workers land in Phase 2 and will get the full tool surface).
+
+    Keep replies appropriate for a chat UI: complete thoughts, not raw tool
+    dumps. When you do investigate via tools, summarise the findings rather
+    than narrating each tool call. End with a clear recommendation or next
+    step where it makes sense.
+    """
   end
 
   defp build_response(sdk_messages, opts, _started_at, _completed_at) do
@@ -122,13 +166,36 @@ defmodule Tracy.LLM.Claude do
     }
   end
 
+  # Extract only the natural-language text blocks from assistant messages,
+  # skipping tool_use / tool_result blocks. (ContentExtractor.extract_text
+  # would render those as `[Tool: <name>...]` placeholder strings, which
+  # leak into the boardroom UI.)
   defp extract_assistant_text(sdk_messages) do
     sdk_messages
     |> Enum.filter(&match?(%ClaudeAgentSDK.Message{type: :assistant}, &1))
-    |> Enum.map(&(ContentExtractor.extract_text(&1) || ""))
+    |> Enum.map(&extract_text_blocks/1)
     |> Enum.reject(&(&1 == ""))
-    |> Enum.join("\n")
+    |> Enum.join("\n\n")
   end
+
+  defp extract_text_blocks(%ClaudeAgentSDK.Message{data: %{message: %{"content" => content}}})
+       when is_list(content) do
+    content
+    |> Enum.filter(fn
+      %{"type" => "text"} -> true
+      _ -> false
+    end)
+    |> Enum.map(fn %{"text" => text} -> text end)
+    |> Enum.join("")
+    |> String.trim()
+  end
+
+  defp extract_text_blocks(%ClaudeAgentSDK.Message{data: %{message: %{"content" => content}}})
+       when is_binary(content) do
+    String.trim(content)
+  end
+
+  defp extract_text_blocks(_), do: ""
 
   defp find_result_message(sdk_messages) do
     Enum.find(sdk_messages, &match?(%ClaudeAgentSDK.Message{type: :result}, &1))
