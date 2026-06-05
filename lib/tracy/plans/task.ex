@@ -16,7 +16,7 @@ defmodule Tracy.Plans.Task do
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
 
-  @roles ~w(engineer researcher pm reviewer note_taker operator scout)
+  @roles ~w(engineer designer researcher pm reviewer note_taker operator scout)
   @statuses ~w(triage backlog in_progress in_review needs_input blocked done canceled)
 
   def roles, do: @roles

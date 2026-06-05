@@ -14,7 +14,7 @@ defmodule Tracy.Billing.AgentRun do
 
   @buckets ~w(interactive sdk_pool)
   @statuses ~w(completed error paused)
-  @roles ~w(main engineer researcher pm reviewer note_taker operator scout daemon side_channel)
+  @roles ~w(main engineer designer researcher pm reviewer note_taker operator scout daemon side_channel)
 
   schema "agent_runs" do
     field :session_id, :binary_id

@@ -8,8 +8,11 @@ defmodule TracyWeb.PlanLive.Show do
   """
   use TracyWeb, :live_view
 
-  alias Tracy.{Plans, Workers}
+  alias Tracy.{Assets, Plans, Workers}
+  alias Tracy.Assets.Asset
   alias Tracy.Plans.{Plan, Task}
+
+  @max_upload_size 25_000_000  # 25 MB
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -23,19 +26,29 @@ defmodule TracyWeb.PlanLive.Show do
       plan ->
         if connected?(socket) do
           Phoenix.PubSub.subscribe(Tracy.PubSub, "plans")
+          Phoenix.PubSub.subscribe(Tracy.PubSub, "assets:#{plan.id}")
           # Watch any tasks currently in_progress so we get worker events.
           Enum.each(plan.tasks, fn task ->
             if task.status == "in_progress", do: Workers.subscribe(task.id)
           end)
         end
 
-        {:ok,
-         socket
-         |> assign(:page_title, plan.title)
-         |> assign(:plan, plan)
-         |> assign(:show_transition_menu?, false)
-         |> assign(:new_task, %{title: "", role: "engineer"})
-         |> assign(:task_transition_id, nil)}
+        socket =
+          socket
+          |> assign(:page_title, plan.title)
+          |> assign(:plan, plan)
+          |> assign(:assets, Assets.list_asset_summaries(plan.id))
+          |> assign(:show_transition_menu?, false)
+          |> assign(:new_task, %{title: "", role: "engineer"})
+          |> assign(:task_transition_id, nil)
+          |> assign(:new_link, %{filename: "", body: ""})
+          |> allow_upload(:asset_file,
+            accept: :any,
+            max_entries: 5,
+            max_file_size: @max_upload_size
+          )
+
+        {:ok, socket}
     end
   end
 
@@ -125,9 +138,100 @@ defmodule TracyWeb.PlanLive.Show do
     end
   end
 
+  def handle_event("validate_upload", _params, socket), do: {:noreply, socket}
+
+  def handle_event("cancel_upload", %{"ref" => ref}, socket) do
+    {:noreply, cancel_upload(socket, :asset_file, ref)}
+  end
+
+  def handle_event("upload_files", _params, socket) do
+    user_id = socket.assigns.current_scope.user.id
+    plan_id = socket.assigns.plan.id
+
+    uploaded =
+      consume_uploaded_entries(socket, :asset_file, fn %{path: path}, entry ->
+        data = File.read!(path)
+
+        attrs = %{
+          plan_id: plan_id,
+          filename: entry.client_name,
+          content_type: entry.client_type || "application/octet-stream",
+          data: data,
+          uploaded_by_id: user_id
+        }
+
+        case Assets.create_file_asset(attrs) do
+          {:ok, asset} -> {:ok, asset.id}
+          {:error, _cs} -> {:postpone, :error}
+        end
+      end)
+
+    if uploaded != [] do
+      Phoenix.PubSub.broadcast(Tracy.PubSub, "assets:#{plan_id}", :assets_changed)
+    end
+
+    {:noreply, assign(socket, :assets, Assets.list_asset_summaries(plan_id))}
+  end
+
+  def handle_event("compose_link", %{"new_link" => params}, socket) do
+    {:noreply, assign(socket, :new_link, %{
+      filename: params["filename"] || "",
+      body: params["body"] || ""
+    })}
+  end
+
+  def handle_event("create_link", %{"new_link" => %{"filename" => title, "body" => url}}, socket) do
+    url = String.trim(url)
+    title = title |> to_string() |> String.trim()
+    plan_id = socket.assigns.plan.id
+
+    cond do
+      url == "" ->
+        {:noreply, socket}
+
+      true ->
+        attrs = %{
+          plan_id: plan_id,
+          filename: (if title == "", do: url, else: title),
+          body: url,
+          uploaded_by_id: socket.assigns.current_scope.user.id
+        }
+
+        case Assets.create_link_asset(attrs) do
+          {:ok, _} ->
+            Phoenix.PubSub.broadcast(Tracy.PubSub, "assets:#{plan_id}", :assets_changed)
+
+            {:noreply,
+             socket
+             |> assign(:new_link, %{filename: "", body: ""})
+             |> assign(:assets, Assets.list_asset_summaries(plan_id))}
+
+          {:error, _cs} ->
+            {:noreply, put_flash(socket, :error, "Couldn't save that link.")}
+        end
+    end
+  end
+
+  def handle_event("delete_asset", %{"id" => id}, socket) do
+    plan_id = socket.assigns.plan.id
+
+    case Assets.delete_asset(id) do
+      {:ok, _} ->
+        Phoenix.PubSub.broadcast(Tracy.PubSub, "assets:#{plan_id}", :assets_changed)
+        {:noreply, assign(socket, :assets, Assets.list_asset_summaries(plan_id))}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Couldn't delete that asset.")}
+    end
+  end
+
   @impl true
   def handle_info(:plans_changed, socket), do: {:noreply, reload_plan(socket)}
   def handle_info({:worker_event, _task_id, _event}, socket), do: {:noreply, reload_plan(socket)}
+
+  def handle_info(:assets_changed, socket) do
+    {:noreply, assign(socket, :assets, Assets.list_asset_summaries(socket.assigns.plan.id))}
+  end
 
   # ---- view ----
 
@@ -176,6 +280,12 @@ defmodule TracyWeb.PlanLive.Show do
       </section>
 
       <.new_task_form new_task={@new_task} />
+
+      <.assets_section
+        assets={@assets}
+        uploads={@uploads}
+        new_link={@new_link}
+      />
     </Layouts.app>
     """
   end
@@ -375,6 +485,162 @@ defmodule TracyWeb.PlanLive.Show do
     </form>
     """
   end
+
+  attr :assets, :list, required: true
+  attr :uploads, :map, required: true
+  attr :new_link, :map, required: true
+
+  defp assets_section(assigns) do
+    ~H"""
+    <section class="mt-8">
+      <header class="mb-2 flex items-baseline justify-between">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-base-content/60">
+          Assets
+        </h2>
+        <span class="text-[10px] tabular-nums text-base-content/40">
+          {length(@assets)}
+        </span>
+      </header>
+
+      <ul :if={@assets != []} class="mb-4 space-y-2">
+        <li :for={asset <- @assets}>
+          <.asset_row asset={asset} />
+        </li>
+      </ul>
+
+      <p :if={@assets == []} class="mb-4 rounded-box border border-dashed border-base-300/60 bg-base-200/20 px-4 py-6 text-center text-xs text-base-content/50">
+        No assets yet. Upload files, add a link, or workers will attach
+        deliverables here automatically.
+      </p>
+
+      <details class="rounded-box border border-base-300/60 bg-base-200/30">
+        <summary class="cursor-pointer px-4 py-2.5 text-sm font-medium text-base-content">
+          + Add asset
+        </summary>
+
+        <div class="space-y-4 px-4 pb-4">
+          <form
+            phx-submit="upload_files"
+            phx-change="validate_upload"
+            class="space-y-2"
+          >
+            <p class="text-[10px] uppercase tracking-wider text-base-content/50">Upload files (≤25 MB each)</p>
+            <.live_file_input upload={@uploads.asset_file} class="file-input file-input-bordered w-full text-sm" />
+
+            <div :if={@uploads.asset_file.entries != []} class="space-y-1.5 text-xs">
+              <div :for={entry <- @uploads.asset_file.entries} class="flex items-center gap-2">
+                <span class="flex-1 truncate text-base-content/70">{entry.client_name}</span>
+                <span class="tabular-nums text-base-content/50">{entry.progress}%</span>
+                <button
+                  type="button"
+                  phx-click="cancel_upload"
+                  phx-value-ref={entry.ref}
+                  class="text-base-content/50 hover:text-error"
+                >
+                  <.icon name="hero-x-mark-mini" class="size-4" />
+                </button>
+                <p :for={err <- upload_errors(@uploads.asset_file, entry)} class="text-error">
+                  {format_upload_error(err)}
+                </p>
+              </div>
+            </div>
+
+            <button
+              :if={@uploads.asset_file.entries != []}
+              type="submit"
+              class="btn btn-primary btn-sm"
+            >
+              <.icon name="hero-arrow-up-tray-mini" class="size-4" /> Upload
+            </button>
+          </form>
+
+          <div class="border-t border-base-300/40 pt-3">
+            <form phx-submit="create_link" phx-change="compose_link" class="flex flex-col gap-2 sm:flex-row">
+              <input
+                type="text"
+                name="new_link[filename]"
+                value={@new_link.filename}
+                placeholder="Title (optional)"
+                class="input input-bordered flex-1 bg-base-100/60 text-sm sm:flex-none sm:w-44"
+              />
+              <input
+                type="url"
+                name="new_link[body]"
+                value={@new_link.body}
+                placeholder="https://…"
+                class="input input-bordered flex-1 bg-base-100/60 text-sm"
+              />
+              <button
+                type="submit"
+                disabled={@new_link.body == ""}
+                class="btn btn-ghost"
+              >
+                <.icon name="hero-link-mini" class="size-4" /> Link
+              </button>
+            </form>
+          </div>
+        </div>
+      </details>
+    </section>
+    """
+  end
+
+  attr :asset, :map, required: true
+
+  defp asset_row(assigns) do
+    ~H"""
+    <div class="flex items-center gap-3 rounded-box border border-base-300/60 bg-base-100/60 p-3">
+      <div class="grid size-9 shrink-0 place-items-center rounded-box bg-base-200">
+        <.icon name={asset_icon(@asset)} class="size-4 text-base-content/60" />
+      </div>
+
+      <div class="min-w-0 flex-1">
+        <%= cond do %>
+          <% @asset.kind == "link" -> %>
+            <a href={@asset.body} target="_blank" rel="noopener" class="block truncate text-sm font-medium text-primary hover:underline">
+              {@asset.filename}
+            </a>
+            <p class="truncate text-[10px] text-base-content/50">{@asset.body}</p>
+          <% true -> %>
+            <p class="truncate text-sm font-medium text-base-content">{@asset.filename}</p>
+            <p class="text-[10px] uppercase tracking-wider text-base-content/50">
+              {@asset.content_type} · {Asset.humanize_size(@asset.size_bytes)} · {@asset.source}
+            </p>
+        <% end %>
+      </div>
+
+      <a
+        :if={@asset.kind in ["file", "image"]}
+        href={~p"/assets/#{@asset.id}/download"}
+        class="btn btn-ghost btn-xs"
+        target="_blank"
+        rel="noopener"
+      >
+        <.icon name="hero-arrow-down-tray-mini" class="size-4" />
+        <span class="hidden sm:inline">Download</span>
+      </a>
+
+      <button
+        phx-click="delete_asset"
+        phx-value-id={@asset.id}
+        data-confirm="Delete this asset?"
+        class="btn btn-ghost btn-xs text-base-content/50 hover:text-error"
+        aria-label="Delete"
+      >
+        <.icon name="hero-trash-mini" class="size-4" />
+      </button>
+    </div>
+    """
+  end
+
+  defp asset_icon(%{kind: "image"}), do: "hero-photo"
+  defp asset_icon(%{kind: "link"}), do: "hero-link"
+  defp asset_icon(%{kind: "note"}), do: "hero-document-text"
+  defp asset_icon(_), do: "hero-document"
+
+  defp format_upload_error(:too_large), do: "Too large (max 25 MB)"
+  defp format_upload_error(:not_accepted), do: "File type not accepted"
+  defp format_upload_error(err), do: to_string(err)
 
   # ---- helpers ----
 

@@ -120,6 +120,7 @@ defmodule Tracy.Workers.Claude do
 
   # Per-role model defaults (locked in TRACY_CSUITE.md roster table).
   defp worker_model("engineer"), do: "sonnet"
+  defp worker_model("designer"), do: "sonnet"
   defp worker_model("reviewer"), do: "sonnet"
   defp worker_model("operator"), do: "sonnet"
   defp worker_model(_other), do: "haiku"
