@@ -44,7 +44,7 @@ defmodule TracyWeb.BoardroomLive do
       |> assign(:streaming_buffer, "")
       |> assign(:streaming_index, nil)
       |> assign(:composer, "")
-      |> assign(:cost, Billing.sdk_pool_status())
+      |> assign(:meters, Billing.boardroom_meters())
       |> stream(:messages, messages, dom_id: &"msg-#{&1.index}")
 
     {:ok, socket}
@@ -131,7 +131,7 @@ defmodule TracyWeb.BoardroomLive do
       |> assign(:streaming?, false)
       |> assign(:streaming_buffer, "")
       |> assign(:streaming_index, nil)
-      |> assign(:cost, Billing.sdk_pool_status())
+      |> assign(:meters, Billing.boardroom_meters())
 
     {:noreply, socket}
   end
@@ -147,7 +147,7 @@ defmodule TracyWeb.BoardroomLive do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} page_title="Boardroom">
       <div class="flex h-[calc(100dvh-7rem)] flex-col sm:h-[calc(100dvh-8rem)]">
-        <.boardroom_header cost={@cost} email={@current_scope.user.email} />
+        <.boardroom_header meters={@meters} email={@current_scope.user.email} />
 
         <section
           id="messages"
@@ -193,48 +193,96 @@ defmodule TracyWeb.BoardroomLive do
     """
   end
 
-  attr :cost, :map, required: true
+  attr :meters, :map, required: true
   attr :email, :string, required: true
 
   defp boardroom_header(assigns) do
     ~H"""
-    <header class="mb-3 flex flex-col gap-3 sm:mb-4 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <p class="text-xs font-medium uppercase tracking-wider text-base-content/50">Tracy</p>
-        <h1 class="text-xl font-bold tracking-tight text-base-content sm:text-2xl">Boardroom</h1>
-        <p class="mt-0.5 text-xs text-base-content/60">Signed in as {@email}</p>
+    <header class="mb-3 flex flex-col gap-3 sm:mb-4">
+      <div class="flex items-end justify-between gap-2">
+        <div>
+          <p class="text-xs font-medium uppercase tracking-wider text-base-content/50">Tracy</p>
+          <h1 class="text-xl font-bold tracking-tight text-base-content sm:text-2xl">Boardroom</h1>
+          <p class="mt-0.5 text-xs text-base-content/60">Signed in as {@email}</p>
+        </div>
       </div>
 
-      <div class="rounded-box border border-base-300/60 bg-base-200/40 px-3 py-2 sm:max-w-xs">
-        <div class="flex items-baseline justify-between gap-2">
-          <span class="text-[10px] font-medium uppercase tracking-wider text-base-content/60">
-            SDK pool
-          </span>
-          <span class="text-xs tabular-nums text-base-content/70">
-            ${:io_lib.format(~c"~.2f", [@cost.spent_dollars])} / ${@cost.cap_dollars}
-          </span>
-        </div>
-        <div
-          class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-base-300/70"
-          role="progressbar"
-          aria-valuenow={trunc(@cost.pct)}
-          aria-valuemin="0"
-          aria-valuemax="100"
-        >
-          <div
-            class={[
-              "h-full transition-all",
-              @cost.zone == :normal && "bg-success",
-              @cost.zone == :caution && "bg-success",
-              @cost.zone == :winddown && "bg-warning",
-              @cost.zone == :hardstop && "bg-error"
-            ]}
-            style={"width: #{max(@cost.pct, 1.5)}%"}
-          ></div>
-        </div>
+      <%!-- Quick-view meters: hour, week, SDK pool month --%>
+      <div class="grid grid-cols-3 gap-2 sm:gap-3">
+        <.usage_chip label="Last hour" cost_dollars={@meters.hour.cost_dollars} runs={@meters.hour.runs} />
+        <.usage_chip label="Last 7d" cost_dollars={@meters.week.cost_dollars} runs={@meters.week.runs} />
+        <.sdk_pool_chip status={@meters.sdk_pool_month} />
       </div>
     </header>
     """
+  end
+
+  attr :label, :string, required: true
+  attr :cost_dollars, :float, required: true
+  attr :runs, :integer, required: true
+
+  defp usage_chip(assigns) do
+    ~H"""
+    <div class="rounded-box border border-base-300/60 bg-base-200/40 px-3 py-2">
+      <div class="text-[10px] font-medium uppercase tracking-wider text-base-content/60">
+        {@label}
+      </div>
+      <div class="mt-0.5 flex items-baseline justify-between gap-2">
+        <span class="text-base font-semibold tabular-nums text-base-content sm:text-lg">
+          {format_dollars(@cost_dollars)}
+        </span>
+        <span class="text-[10px] tabular-nums text-base-content/50">
+          {@runs} {if @runs == 1, do: "call", else: "calls"}
+        </span>
+      </div>
+    </div>
+    """
+  end
+
+  attr :status, :map, required: true
+
+  defp sdk_pool_chip(assigns) do
+    ~H"""
+    <div class="rounded-box border border-base-300/60 bg-base-200/40 px-3 py-2">
+      <div class="flex items-baseline justify-between gap-1">
+        <span class="text-[10px] font-medium uppercase tracking-wider text-base-content/60">
+          SDK pool
+        </span>
+        <span class="text-[10px] tabular-nums text-base-content/50">
+          {format_dollars(@status.cap_dollars)}
+        </span>
+      </div>
+      <div class="mt-0.5 flex items-baseline justify-between gap-1">
+        <span class="text-base font-semibold tabular-nums text-base-content sm:text-lg">
+          {format_dollars(@status.spent_dollars)}
+        </span>
+        <span class="text-[10px] tabular-nums text-base-content/50">{trunc(@status.pct)}%</span>
+      </div>
+      <div
+        class="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-base-300/70"
+        role="progressbar"
+        aria-valuenow={trunc(@status.pct)}
+        aria-valuemin="0"
+        aria-valuemax="100"
+        title={"#{Float.round(@status.pct, 2)}% — zone: #{@status.zone}"}
+      >
+        <div
+          class={[
+            "h-full transition-all",
+            @status.zone == :normal && "bg-success",
+            @status.zone == :caution && "bg-success",
+            @status.zone == :winddown && "bg-warning",
+            @status.zone == :hardstop && "bg-error"
+          ]}
+          style={"width: #{max(@status.pct, 1.5)}%"}
+        ></div>
+      </div>
+    </div>
+    """
+  end
+
+  defp format_dollars(amount) when is_number(amount) do
+    "$" <> :erlang.float_to_binary(amount * 1.0, decimals: 2)
   end
 
   attr :text, :string, required: true
