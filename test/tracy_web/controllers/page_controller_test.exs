@@ -25,7 +25,7 @@ defmodule TracyWeb.PageControllerTest do
       conn = conn |> log_in_user(user) |> get(~p"/boardroom")
       body = html_response(conn, 200)
       assert body =~ "Boardroom"
-      assert body =~ "JARVIS"
+      assert body =~ "Tracy"
       assert body =~ user.email
     end
   end
