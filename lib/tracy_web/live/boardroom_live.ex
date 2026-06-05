@@ -166,6 +166,22 @@ defmodule TracyWeb.BoardroomLive do
       created_at: DateTime.utc_now()
     }
 
+    # Persist as an Episode so the system bubble survives rehydration.
+    # Best-effort — boardroom UX shouldn't fail if the DB write hiccups.
+    _ =
+      try do
+        Tracy.Memory.record_episode(
+          %{
+            source: "session",
+            body: content,
+            metadata: %{"role" => "system"}
+          },
+          embed: false
+        )
+      rescue
+        _ -> :ok
+      end
+
     socket =
       socket
       |> stream_insert(:messages, view, dom_id: "msg-#{idx}")

@@ -29,6 +29,11 @@ defmodule Tracy.Workers.ClaudeTest do
   end
 
   describe "module compile + dispatch shape" do
+    setup do
+      Code.ensure_loaded(Claude)
+      :ok
+    end
+
     test "the module defines execute/2" do
       assert function_exported?(Claude, :execute, 2)
     end

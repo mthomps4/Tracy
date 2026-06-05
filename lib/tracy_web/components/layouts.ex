@@ -60,7 +60,10 @@ defmodule TracyWeb.Layouts do
         <div class="ml-auto flex items-center gap-1 sm:gap-2">
           <%= if @current_scope do %>
             <.link navigate={~p"/boardroom"} class="btn btn-ghost btn-sm hidden sm:inline-flex">
-              <.icon name="hero-squares-2x2-mini" class="size-4" /> Boardroom
+              <.icon name="hero-chat-bubble-left-right-mini" class="size-4" /> Boardroom
+            </.link>
+            <.link navigate={~p"/plans"} class="btn btn-ghost btn-sm hidden sm:inline-flex">
+              <.icon name="hero-squares-2x2-mini" class="size-4" /> Plans
             </.link>
             <.link navigate={~p"/users/settings"} class="btn btn-ghost btn-sm hidden sm:inline-flex">
               <.icon name="hero-cog-6-tooth-mini" class="size-4" /> Settings
