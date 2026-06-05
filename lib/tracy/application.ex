@@ -16,6 +16,8 @@ defmodule Tracy.Application do
       # DynamicSupervisor owns their lifecycle.
       {Registry, keys: :unique, name: Tracy.Session.Registry},
       Tracy.Session.Supervisor,
+      # Workers — DynamicSupervisor for per-task worker GenServers
+      Tracy.Workers.Supervisor,
       TracyWeb.Endpoint
     ]
 

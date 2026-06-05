@@ -134,6 +134,29 @@ defmodule Tracy.Plans do
     end
   end
 
+  @doc """
+  Mark a task as blocked with a failure reason recorded in metadata.
+  Used by `Tracy.Workers.Server` when an adapter raises or returns
+  `{:error, _}`.
+  """
+  def update_plan_task_with_failure(%Task{} = task, reason) do
+    metadata =
+      Map.merge(task.metadata || %{}, %{
+        "last_failure" => %{
+          "reason" => inspect(reason, limit: 500),
+          "at" => DateTime.utc_now() |> DateTime.to_iso8601()
+        }
+      })
+
+    task
+    |> Task.changeset(%{metadata: metadata})
+    |> Repo.update()
+    |> case do
+      {:ok, updated} -> transition_task(updated, "blocked")
+      err -> err
+    end
+  end
+
   # ---- helpers ----
 
   defp maybe_filter_project(query, nil), do: query

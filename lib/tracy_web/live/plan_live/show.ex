@@ -8,7 +8,7 @@ defmodule TracyWeb.PlanLive.Show do
   """
   use TracyWeb, :live_view
 
-  alias Tracy.Plans
+  alias Tracy.{Plans, Workers}
   alias Tracy.Plans.{Plan, Task}
 
   @impl true
@@ -21,7 +21,13 @@ defmodule TracyWeb.PlanLive.Show do
          |> push_navigate(to: ~p"/plans")}
 
       plan ->
-        if connected?(socket), do: Phoenix.PubSub.subscribe(Tracy.PubSub, "plans")
+        if connected?(socket) do
+          Phoenix.PubSub.subscribe(Tracy.PubSub, "plans")
+          # Watch any tasks currently in_progress so we get worker events.
+          Enum.each(plan.tasks, fn task ->
+            if task.status == "in_progress", do: Workers.subscribe(task.id)
+          end)
+        end
 
         {:ok,
          socket
@@ -108,8 +114,20 @@ defmodule TracyWeb.PlanLive.Show do
     end
   end
 
+  def handle_event("dispatch_worker", %{"id" => task_id}, socket) do
+    case Workers.dispatch(task_id) do
+      {:ok, _pid} ->
+        Workers.subscribe(task_id)
+        {:noreply, socket}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Couldn't dispatch: #{inspect(reason)}")}
+    end
+  end
+
   @impl true
   def handle_info(:plans_changed, socket), do: {:noreply, reload_plan(socket)}
+  def handle_info({:worker_event, _task_id, _event}, socket), do: {:noreply, reload_plan(socket)}
 
   # ---- view ----
 
@@ -274,7 +292,30 @@ defmodule TracyWeb.PlanLive.Show do
             </span>
             <span :if={@task.duration_ms} class="tabular-nums">{format_duration(@task.duration_ms)}</span>
           </div>
+
+          <div :if={@task.report} class="mt-2 rounded-field bg-base-200/40 px-2 py-1.5 text-xs text-base-content/70">
+            <p class="font-medium text-base-content/80">{Map.get(@task.report, "summary", "")}</p>
+            <ul :if={next_steps = Map.get(@task.report, "proposed_next_steps")} class="mt-1 list-disc space-y-0.5 pl-4">
+              <li :for={step <- next_steps}>{step}</li>
+            </ul>
+          </div>
         </div>
+
+        <button
+          :if={@task.status in ["backlog", "blocked"]}
+          phx-click="dispatch_worker"
+          phx-value-id={@task.id}
+          class="btn btn-primary btn-xs shrink-0"
+          title="Dispatch a worker for this task"
+        >
+          <.icon name="hero-paper-airplane-mini" class="size-3" />
+          <span class="hidden sm:inline">Dispatch</span>
+        </button>
+
+        <span :if={@task.status == "in_progress"} class="inline-flex shrink-0 items-center gap-1 text-[10px] uppercase tracking-wider text-primary">
+          <span class="size-1.5 rounded-full bg-primary web-pulse"></span>
+          <span class="hidden sm:inline">working</span>
+        </span>
       </div>
 
       <div
