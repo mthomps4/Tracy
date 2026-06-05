@@ -175,4 +175,39 @@ defmodule Tracy.PlansTest do
       assert counts["backlog"] == 1
     end
   end
+
+  describe "workspace_path/1" do
+    setup do
+      tmp_root = Path.join(System.tmp_dir!(), "tracy-workspace-test-#{System.unique_integer([:positive])}")
+      prev = Application.get_env(:tracy, :workspace_root)
+      Application.put_env(:tracy, :workspace_root, tmp_root)
+
+      on_exit(fn ->
+        if prev, do: Application.put_env(:tracy, :workspace_root, prev), else: Application.delete_env(:tracy, :workspace_root)
+        File.rm_rf!(tmp_root)
+      end)
+
+      %{tmp_root: tmp_root}
+    end
+
+    test "returns an absolute path under workspace_root/plans/<id> and creates it", %{tmp_root: tmp_root} do
+      {:ok, plan} = Plans.create_plan(%{title: "workspace plan"})
+      path = Plans.workspace_path(plan)
+
+      assert path == Path.join([Path.expand(tmp_root), "plans", plan.id])
+      assert File.dir?(path)
+    end
+
+    test "accepts a bare plan id string", %{tmp_root: _tmp_root} do
+      id = Ecto.UUID.generate()
+      assert path = Plans.workspace_path(id)
+      assert String.ends_with?(path, "plans/#{id}")
+      assert File.dir?(path)
+    end
+
+    test "is idempotent on repeat calls", %{tmp_root: _tmp_root} do
+      id = Ecto.UUID.generate()
+      assert Plans.workspace_path(id) == Plans.workspace_path(id)
+    end
+  end
 end

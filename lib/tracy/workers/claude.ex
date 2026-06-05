@@ -45,6 +45,7 @@ defmodule Tracy.Workers.Claude do
   require Logger
 
   alias ClaudeAgentSDK.Options
+  alias Tracy.Plans
   alias Tracy.Plans.Task
 
   @default_allowed_tools ~w(Read Grep Glob WebSearch WebFetch Bash Edit Write)
@@ -60,8 +61,9 @@ defmodule Tracy.Workers.Claude do
 
   @impl true
   def execute(%Task{} = task, opts) do
-    prompt = build_prompt(task)
-    sdk_opts = build_options(task, opts)
+    workspace = Plans.workspace_path(task.plan_id)
+    prompt = build_prompt(task, workspace)
+    sdk_opts = build_options(task, opts, workspace)
 
     started_at = DateTime.utc_now()
 
@@ -83,12 +85,18 @@ defmodule Tracy.Workers.Claude do
 
   # ---- prompt construction ----
 
-  defp build_prompt(%Task{} = task) do
+  defp build_prompt(%Task{} = task, workspace) do
     """
     Role: #{task.role}
     Plan task: #{task.title}
 
     #{if task.brief && task.brief != "", do: "Brief:\n#{task.brief}", else: "(No brief provided — interpret the task title.)"}
+
+    Workspace: your current working directory (`pwd`) is this plan's
+    persistent workspace — #{workspace}. Files you create or edit here
+    persist across dispatches and are visible to other workers on the
+    same plan. `ls` to see what previous workers left behind; organise
+    with `mkdir` as needed.
 
     Do the work. Investigate with tools as needed. Modify files where the task
     calls for it. When you're finished, end your message with a short summary
@@ -118,7 +126,7 @@ defmodule Tracy.Workers.Claude do
     |> String.trim()
   end
 
-  defp build_options(task, opts) do
+  defp build_options(task, opts, workspace) do
     allowed = Keyword.get(opts, :allowed_tools, role_allowed_tools(task.role))
     max_turns = Keyword.get(opts, :max_turns, @default_max_turns)
     model = Keyword.get(opts, :model) || worker_model(task.role)
@@ -129,13 +137,14 @@ defmodule Tracy.Workers.Claude do
       output_format: :json,
       allowed_tools: allowed,
       permission_mode: :bypass_permissions,
+      cwd: workspace,
       append_system_prompt: role_system_prompt(task.role)
     }
   rescue
     _ ->
       # Older SDK versions may not support all fields. Fall back to a leaner
       # config that's guaranteed to compile.
-      %Options{model: worker_model(task.role), max_turns: @default_max_turns}
+      %Options{model: worker_model(task.role), max_turns: @default_max_turns, cwd: workspace}
   end
 
   @doc """
@@ -184,7 +193,27 @@ defmodule Tracy.Workers.Claude do
   defp role_specific_guidance("designer") do
     """
     Your output is **artifacts**, not code modifications. Treat this like
-    a design studio handing finished files to engineering.
+    a design studio: you have a project folder, you manage it, you hand
+    finished files to engineering.
+
+    ### Your workspace
+
+    The current working directory IS your project folder for this plan.
+    It persists across dispatches and is shared with other designer
+    workers on the same plan. Treat it like a real designer's project
+    directory:
+
+    - `ls` first to see existing work (other workers' SVGs, mockups,
+      brand assets). Build on them when iterating; don't start from
+      zero unless the brief calls for a fresh take.
+    - `mkdir` freely to organise — `brand/`, `logos/`, `mockups/`,
+      `palette/`, `iterations/v1`, etc. Use whatever structure makes
+      the project readable.
+    - Edit existing files in place when iterating (e.g. tweaking an
+      earlier logo SVG). Save versions in `iterations/` if the brief
+      wants distinct alternatives.
+    - Delete or move stale junk if it's cluttering things — `rm` and
+      `mv` are fair game on your own outputs.
 
     ### What to produce
 
@@ -202,29 +231,29 @@ defmodule Tracy.Workers.Claude do
     Default tool: `rsvg-convert` (librsvg).
         rsvg-convert input.svg -o output.png -w 1024
 
-    Fallback if rsvg isn't installed: ImageMagick.
+    Fallback: ImageMagick.
         magick svg:input.svg output.png
 
     For HTML mockup screenshots (only if Playwright is installed):
         npx playwright screenshot --full-page mockup.html mockup.png
 
-    If neither rsvg-convert nor magick is on the system, just leave the SVG —
-    note it in `## Summary` so the engineer can convert. Don't waste turns
-    installing system packages.
+    If neither rsvg-convert nor magick is on the system, leave the SVG and
+    note it in `## Summary`. Don't waste turns installing system packages.
 
-    ### Output organisation
+    ### Project README
 
-    Write outputs under `design/<short-task-slug>/`. Include a brief
-    `README.md` in that folder describing each file and how to view it
-    (open `index.html` in a browser, etc.).
+    Keep a `README.md` at the workspace root summarising what's in the
+    folder — one line per top-level artifact. Update it as you add or
+    reorganise. It's the project handoff doc.
 
-    List every file you produced in the `files touched:` line of `## Summary`
-    so Tracy's UI can surface them as Assets on the plan.
+    List every file you created or modified in the `files touched:`
+    line of `## Summary` so Tracy's UI can surface them on the plan.
 
     ### What you should NOT do
 
-    - Don't modify existing source files. You don't have `Edit` for a
-      reason — your job is producing new artifacts, not editing the app.
+    - Don't modify the Tracy app source files. You don't have `Edit` for
+      a reason — your job is producing new artifacts in the workspace,
+      not editing the app that runs you.
     - Don't generate raster images from scratch (you can't). If the brief
       asks for a photo, end with `## Needs Input` flagging that image
       generation isn't in your toolset yet.

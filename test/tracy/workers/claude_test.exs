@@ -77,12 +77,16 @@ defmodule Tracy.Workers.ClaudeTest do
   end
 
   describe "role_system_prompt/1" do
-    test "designer prompt covers artifact discipline + SVG→PNG fallback chain" do
+    test "designer prompt covers artifact discipline + SVG→PNG fallback chain + workspace model" do
       prompt = Claude.role_system_prompt("designer")
       assert prompt =~ "artifacts"
       assert prompt =~ "rsvg-convert"
       assert prompt =~ "magick"
-      assert prompt =~ "design/<short-task-slug>/"
+      # workspace-as-project-folder language
+      assert prompt =~ "current working directory"
+      assert prompt =~ "persists across dispatches"
+      assert prompt =~ "mkdir"
+      assert prompt =~ "Edit existing files in place"
       assert prompt =~ "don't have `Edit`"
     end
 

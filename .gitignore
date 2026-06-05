@@ -75,3 +75,8 @@ secrets/*.plain.*
 
 # Coverage / profiling output beyond /cover/
 /excoveralls.json
+
+# Per-plan worker workspaces — workers cd into these to read/write/organise
+# artifacts (designer mockups, generated PNGs, scratch files). Override the
+# root with `config :tracy, workspace_root: "/abs/path"` for prod hosts.
+/workspaces/

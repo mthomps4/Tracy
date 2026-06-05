@@ -32,6 +32,29 @@ defmodule Tracy.Plans do
   @doc "Fetch a plan (raises if not found)."
   def get_plan!(id), do: Repo.get!(Plan, id) |> Repo.preload(:tasks)
 
+  @doc """
+  Filesystem workspace path for a plan. A persistent per-plan directory
+  where workers (especially designers) can read, write, and organise
+  files — the working folder analogue to "this plan's project assets."
+
+  The directory is created if missing. Path is rooted under the
+  configured `:tracy, :workspace_root` (defaults to `"workspaces"` at
+  the repo root). Override with `config :tracy, workspace_root: "/abs/path"`
+  for prod / cross-host deploys.
+
+  Returns an absolute path string.
+  """
+  @spec workspace_path(Plan.t() | String.t()) :: String.t()
+  def workspace_path(%Plan{id: id}), do: workspace_path(id)
+
+  def workspace_path(plan_id) when is_binary(plan_id) do
+    root = Application.get_env(:tracy, :workspace_root, "workspaces")
+    abs_root = Path.expand(root)
+    path = Path.join([abs_root, "plans", plan_id])
+    File.mkdir_p!(path)
+    path
+  end
+
   def get_plan(id) do
     case Repo.get(Plan, id) do
       nil -> nil
