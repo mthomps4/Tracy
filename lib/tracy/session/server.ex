@@ -94,9 +94,10 @@ defmodule Tracy.Session.Server do
   defp rehydrate_messages(opts) do
     if Keyword.get(opts, :rehydrate, true) do
       limit = Keyword.get(opts, :rehydrate_limit, 50)
+      id = Keyword.fetch!(opts, :id)
 
       try do
-        Tracy.Memory.session_history(limit: limit)
+        Tracy.Memory.session_history(limit: limit, session_id: id)
       rescue
         _ -> []
       end
@@ -110,7 +111,7 @@ defmodule Tracy.Session.Server do
     user_msg = Message.user(content)
     new_state = %{state | messages: state.messages ++ [user_msg]}
 
-    record_episode(:user, content, new_state.current_project)
+    record_episode(:user, content, new_state.current_project, state.id)
 
     case LLM.chat(new_state.messages,
            session_id: new_state.id,
@@ -123,7 +124,7 @@ defmodule Tracy.Session.Server do
           | messages: new_state.messages ++ [response.message]
         }
 
-        record_episode(:assistant, response.message.content, final_state.current_project)
+        record_episode(:assistant, response.message.content, final_state.current_project, state.id)
         broadcast(state.id, {:done, response})
         {:reply, {:ok, response}, final_state, @idle_timeout}
 
@@ -136,7 +137,7 @@ defmodule Tracy.Session.Server do
     user_msg = Message.user(content)
     new_state = %{state | messages: state.messages ++ [user_msg]}
 
-    record_episode(:user, content, new_state.current_project)
+    record_episode(:user, content, new_state.current_project, state.id)
 
     parent = self()
     id = state.id
@@ -191,7 +192,7 @@ defmodule Tracy.Session.Server do
         stream_task: nil
     }
 
-    record_episode(:assistant, response.message.content, final_state.current_project)
+    record_episode(:assistant, response.message.content, final_state.current_project, state.id)
     {:noreply, final_state, @idle_timeout}
   end
 
@@ -208,12 +209,12 @@ defmodule Tracy.Session.Server do
 
   defp broadcast(id, event), do: PubSub.broadcast(Tracy.PubSub, topic(id), {:session_event, id, event})
 
-  defp record_episode(role, content, project) do
+  defp record_episode(role, content, project, session_id) do
     Memory.record_episode(%{
       source: "session",
       project: project,
       body: content,
-      metadata: %{"role" => Atom.to_string(role)}
+      metadata: %{"role" => Atom.to_string(role), "session_id" => session_id}
     })
   rescue
     _ -> :ok

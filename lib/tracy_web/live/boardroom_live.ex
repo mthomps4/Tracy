@@ -174,7 +174,7 @@ defmodule TracyWeb.BoardroomLive do
           %{
             source: "session",
             body: content,
-            metadata: %{"role" => "system"}
+            metadata: %{"role" => "system", "session_id" => socket.assigns.session_id}
           },
           embed: false
         )

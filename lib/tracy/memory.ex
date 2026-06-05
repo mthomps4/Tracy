@@ -61,26 +61,39 @@ defmodule Tracy.Memory do
   end
 
   @doc """
-  Rehydrate a boardroom session's conversation history from recorded episodes.
+  Rehydrate a session's conversation history from recorded episodes.
 
   Returns a list of `Tracy.LLM.Message` structs in chronological order, ready
   to seed a fresh `Tracy.Session.Server`. Filters to episodes with
   `source: "session"` and a `role` metadata key (user or assistant).
 
-  Until the Episode schema gains a `session_id` column, this returns the
-  N most recent session episodes globally — fine for single-user v1.
+  Options:
+
+    * `:limit` — max messages to return (default 50)
+    * `:session_id` — scope to episodes stamped with this session id in
+      `metadata.session_id`. Required once per-plan Whiteboards share the
+      episode log with the global Boardroom; without it both surfaces
+      rehydrate from the same pool.
   """
   def session_history(opts \\ []) do
     limit = Keyword.get(opts, :limit, 50)
+    session_id = Keyword.get(opts, :session_id)
 
     Episode
     |> where([e], e.source == "session")
     |> where([e], fragment("? \\? 'role'", e.metadata))
+    |> maybe_filter_session_id(session_id)
     |> order_by([e], desc: e.occurred_at)
     |> limit(^limit)
     |> Repo.all()
     |> Enum.reverse()
     |> Enum.map(&episode_to_message/1)
+  end
+
+  defp maybe_filter_session_id(query, nil), do: query
+
+  defp maybe_filter_session_id(query, session_id) do
+    where(query, [e], fragment("?->>'session_id' = ?", e.metadata, ^session_id))
   end
 
   defp episode_to_message(%Episode{body: body, metadata: %{"role" => role_str}}) do

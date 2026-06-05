@@ -305,13 +305,10 @@ defmodule TracyWeb.PlanLive.Show do
       </div>
 
       <div :if={@active_tab == "whiteboard"}>
-        <section class="rounded-box border border-dashed border-base-300/60 bg-base-200/20 px-6 py-12 text-center">
-          <.icon name="hero-chat-bubble-left-right" class="mx-auto size-8 text-primary/60" />
-          <h2 class="mt-3 text-sm font-semibold text-base-content">Whiteboard</h2>
-          <p class="mt-1 text-xs text-base-content/60">
-            Per-plan conversation with Tracy — coming in the next commit.
-          </p>
-        </section>
+        {live_render(@socket, TracyWeb.WhiteboardLive,
+          id: "whiteboard-#{@plan.id}",
+          session: %{"plan_id" => @plan.id}
+        )}
       </div>
 
       <div :if={@active_tab == "tasks"}>
