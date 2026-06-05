@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+cd -P -- "$(dirname -- "$0")"
+exec ./falcon eval "Falcon.Release.create_db(); Falcon.Release.migrate()"

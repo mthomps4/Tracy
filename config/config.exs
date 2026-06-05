@@ -7,9 +7,26 @@
 # General application configuration
 import Config
 
+config :tracy, :scopes,
+  user: [
+    default: true,
+    module: Tracy.Accounts.Scope,
+    assign_key: :current_scope,
+    access_path: [:user, :id],
+    schema_key: :user_id,
+    schema_type: :id,
+    schema_table: :users,
+    test_data_fixture: Tracy.AccountsFixtures,
+    test_setup_helper: :register_and_log_in_user
+  ]
+
 config :tracy,
   ecto_repos: [Tracy.Repo],
   generators: [timestamp_type: :utc_datetime]
+
+# Swoosh: local-only mail in dev (/dev/mailbox), no SMTP. Prod adapter set in runtime.exs if/when needed.
+config :tracy, Tracy.Mailer, adapter: Swoosh.Adapters.Local
+config :swoosh, :api_client, false
 
 # Configure the endpoint
 config :tracy, TracyWeb.Endpoint,

@@ -27,6 +27,13 @@ defmodule TracyWeb.Endpoint do
     only: TracyWeb.static_paths(),
     raise_on_missing_only: code_reloading?
 
+  # Tidewave: runtime introspection MCP — :dev only via mix.exs guard.
+  # Must be plugged BEFORE the code-reloader block so it sees the raw request
+  # before the body has been parsed.
+  if Code.ensure_loaded?(Tidewave) do
+    plug Tidewave
+  end
+
   # Code reloading can be explicitly enabled under the
   # :code_reloader configuration of your endpoint.
   if code_reloading? do

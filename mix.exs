@@ -40,6 +40,7 @@ defmodule Tracy.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
+      {:bcrypt_elixir, "~> 3.0"},
       {:phoenix, "~> 1.8.5"},
       {:phoenix_ecto, "~> 4.5"},
       {:ecto_sql, "~> 3.13"},
@@ -63,7 +64,13 @@ defmodule Tracy.MixProject do
       {:gettext, "~> 1.0"},
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
-      {:bandit, "~> 1.5"}
+      {:bandit, "~> 1.5"},
+      # phx.gen.auth UserNotifier uses Swoosh; Local adapter in dev = no SMTP, mailbox at /dev/mailbox
+      {:swoosh, "~> 1.16"},
+      # Tidewave: runtime introspection MCP for AI-assisted Phoenix dev (dev-only).
+      # Exposes SQL exec, project eval, Ecto schema inspection, log tailing.
+      # Gate write-capable tools through Claude Code PreToolUse hooks (see TRACY_TOOLING.md).
+      {:tidewave, "~> 0.5", only: :dev}
     ]
   end
 

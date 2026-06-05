@@ -1,0 +1,19 @@
+# Copy to .envrc and fill in values, then run: direnv allow
+# See config/runtime.exs for how these are consumed
+
+# Phoenix
+export PORT="4000"
+# export PHX_SERVER="true"  # uncomment for production/release mode
+
+# Anthropic (Tracy uses subscription OAuth via `claude setup-token`, NOT API key).
+# Do NOT set ANTHROPIC_API_KEY — Claude Code would prefer it over the OAuth token
+# and bill at API rates instead of the Max plan's SDK credit pool.
+# unset ANTHROPIC_API_KEY
+
+# Voyage embeddings (Phase 1+, for prose/decisions in memory layer)
+# export VOYAGE_API_KEY=""
+
+# Production only
+# export DATABASE_URL="ecto://USER:PASS@HOST/tracy_prod"
+# export SECRET_KEY_BASE=""  # generate with: mix phx.gen.secret
+# export PHX_HOST="tracy.local"
