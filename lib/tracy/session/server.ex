@@ -129,10 +129,24 @@ defmodule Tracy.Session.Server do
           end
         end
 
-        LLM.stream_chat(new_state.messages,
-          [session_id: id, role: "main", bucket: :interactive],
-          callback
-        )
+        try do
+          case LLM.stream_chat(new_state.messages,
+                 [session_id: id, role: "main", bucket: :interactive],
+                 callback
+               ) do
+            {:ok, _response} ->
+              :ok
+
+            {:error, reason} ->
+              callback.({:error, reason})
+          end
+        rescue
+          exception ->
+            callback.({:error, {:exception, exception}})
+        catch
+          kind, value ->
+            callback.({:error, {kind, value}})
+        end
       end)
 
     {:reply, :ok, %{new_state | stream_task: task}, @idle_timeout}

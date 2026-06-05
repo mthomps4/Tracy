@@ -35,6 +35,7 @@ defmodule TracyWeb.BoardroomLive do
     if connected?(socket), do: :ok = Session.subscribe(session_id)
 
     messages = Session.messages(session_id) |> Enum.with_index(1) |> Enum.map(&to_view_message/1)
+    next_index = length(messages) + 1
 
     socket =
       socket
@@ -43,6 +44,7 @@ defmodule TracyWeb.BoardroomLive do
       |> assign(:streaming?, false)
       |> assign(:streaming_buffer, "")
       |> assign(:streaming_index, nil)
+      |> assign(:next_message_index, next_index)
       |> assign(:composer, "")
       |> assign(:cost, Billing.sdk_pool_status())
       |> stream(:messages, messages, dom_id: &"msg-#{&1.index}")
@@ -61,10 +63,11 @@ defmodule TracyWeb.BoardroomLive do
     if text == "" do
       {:noreply, socket}
     else
-      next_idx = next_index(socket)
+      user_idx = socket.assigns.next_message_index
+      assistant_idx = user_idx + 1
 
       user_view = %{
-        index: next_idx,
+        index: user_idx,
         role: :user,
         content: text,
         streaming?: false,
@@ -72,7 +75,7 @@ defmodule TracyWeb.BoardroomLive do
       }
 
       assistant_view = %{
-        index: next_idx + 1,
+        index: assistant_idx,
         role: :assistant,
         content: "",
         streaming?: true,
@@ -88,7 +91,8 @@ defmodule TracyWeb.BoardroomLive do
         |> assign(:composer, "")
         |> assign(:streaming?, true)
         |> assign(:streaming_buffer, "")
-        |> assign(:streaming_index, assistant_view.index)
+        |> assign(:streaming_index, assistant_idx)
+        |> assign(:next_message_index, assistant_idx + 1)
 
       {:noreply, socket}
     end
@@ -136,8 +140,42 @@ defmodule TracyWeb.BoardroomLive do
     {:noreply, socket}
   end
 
-  def handle_info({:session_event, _id, {:error, _}}, socket) do
-    {:noreply, assign(socket, :streaming?, false)}
+  def handle_info({:session_event, _id, {:error, reason}}, socket) do
+    # Replace the in-flight 'thinking…' assistant bubble with a visible
+    # error message so the user always knows the request didn't silently die.
+    err_view = %{
+      index: socket.assigns.streaming_index || socket.assigns.next_message_index,
+      role: :error,
+      content: format_error(reason),
+      streaming?: false,
+      created_at: DateTime.utc_now()
+    }
+
+    socket =
+      socket
+      |> stream_insert(:messages, err_view, dom_id: "msg-#{err_view.index}")
+      |> assign(:streaming?, false)
+      |> assign(:streaming_buffer, "")
+      |> assign(:streaming_index, nil)
+      |> assign(:next_message_index, max(socket.assigns.next_message_index, err_view.index + 1))
+
+    {:noreply, socket}
+  end
+
+  defp format_error(reason) do
+    case reason do
+      {:claude_sdk_error, %{__struct__: mod} = exception} ->
+        "Claude SDK error (#{inspect(mod)}): #{Exception.message(exception)}"
+
+      {:claude_sdk_error, other} ->
+        "Claude SDK error: #{inspect(other, limit: 200)}"
+
+      :timeout ->
+        "The request timed out. Try again or check the Phoenix logs."
+
+      other ->
+        "Something went wrong: #{inspect(other, limit: 200)}"
+    end
   end
 
   # ---- view ----
@@ -167,21 +205,28 @@ defmodule TracyWeb.BoardroomLive do
             class={[
               "flex gap-2 sm:gap-3",
               msg.role == :user && "justify-end",
-              msg.role == :assistant && "justify-start"
+              msg.role in [:assistant, :error] && "justify-start"
             ]}
           >
             <div class={[
               "max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed sm:max-w-[75%] sm:px-4 sm:py-3 sm:text-base",
               msg.role == :user && "bg-primary text-primary-content rounded-tr-sm",
-              msg.role == :assistant && "bg-base-200 text-base-content rounded-tl-sm"
+              msg.role == :assistant && "bg-base-200 text-base-content rounded-tl-sm",
+              msg.role == :error && "border border-error/40 bg-error/10 text-error rounded-tl-sm"
             ]}>
-              <%= if msg.role == :assistant and msg.content == "" do %>
-                <span class="inline-flex items-center gap-1 text-base-content/60">
-                  <span class="size-1.5 rounded-full bg-primary web-pulse"></span>
-                  <span class="text-xs">thinking…</span>
-                </span>
-              <% else %>
-                <p class="whitespace-pre-wrap">{msg.content}</p>
+              <%= cond do %>
+                <% msg.role == :assistant and msg.content == "" -> %>
+                  <span class="inline-flex items-center gap-1 text-base-content/60">
+                    <span class="size-1.5 rounded-full bg-primary web-pulse"></span>
+                    <span class="text-xs">thinking…</span>
+                  </span>
+                <% msg.role == :error -> %>
+                  <div class="flex items-start gap-2">
+                    <.icon name="hero-exclamation-triangle-mini" class="mt-0.5 size-4 shrink-0" />
+                    <p class="whitespace-pre-wrap text-xs sm:text-sm">{msg.content}</p>
+                  </div>
+                <% true -> %>
+                  <p class="whitespace-pre-wrap">{msg.content}</p>
               <% end %>
             </div>
           </article>
@@ -297,7 +342,4 @@ defmodule TracyWeb.BoardroomLive do
     }
   end
 
-  defp next_index(socket) do
-    (socket.assigns[:streaming_index] || 0) + 1
-  end
 end
