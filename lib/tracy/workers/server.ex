@@ -90,17 +90,48 @@ defmodule Tracy.Workers.Server do
 
   defp complete(state, report) do
     cost = Map.get(report, :cost_micros, 0)
+    spawned = Map.get(report, :spawned_tasks, []) || []
     report_for_db = report |> Map.drop([:cost_micros]) |> stringify_keys()
 
     case Plans.complete_task(state.task, report_for_db, cost_micros: cost) do
       {:ok, completed} ->
+        # Insert any proposed tasks AFTER marking this one done so the UI
+        # shows the completion and the new tasks together.
+        new_tasks = insert_spawned_tasks(completed.plan_id, spawned, completed.position)
+
         broadcast(state.task_id, {:worker_completed, completed, report})
+
+        if new_tasks != [] do
+          broadcast(state.task_id, {:worker_spawned_tasks, new_tasks})
+        end
+
         broadcast_plans()
+
         %{state | task: completed, status: :completed, report: report}
 
       {:error, _cs} ->
         fail(state, :complete_failed)
     end
+  end
+
+  defp insert_spawned_tasks(_plan_id, [], _start_position), do: []
+
+  defp insert_spawned_tasks(plan_id, spawned, start_position) do
+    spawned
+    |> Enum.with_index(start_position + 1)
+    |> Enum.map(fn {task_attrs, position} ->
+      attrs =
+        task_attrs
+        |> Map.put(:plan_id, plan_id)
+        |> Map.put(:position, position)
+        |> Map.put(:status, "backlog")
+
+      case Plans.create_task(attrs) do
+        {:ok, t} -> t
+        _ -> nil
+      end
+    end)
+    |> Enum.reject(&is_nil/1)
   end
 
   defp fail(state, reason) do

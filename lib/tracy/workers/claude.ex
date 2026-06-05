@@ -87,6 +87,19 @@ defmodule Tracy.Workers.Claude do
         - files touched: <comma-separated list, or "none">
         - next steps: <one to three bullets, or "none">
 
+    If your task involves **breaking work down, planning, or proposing
+    follow-ups for other roles** (especially as a PM / Note-taker), also
+    include a Proposed Tasks block. Tracy will auto-create these as real
+    tasks on the plan:
+
+        ## Proposed Tasks
+        - [designer] Title of the task — short brief explaining what to do
+        - [engineer] Another task title — short brief
+        - [researcher] etc
+
+    Use roles from this set:
+    engineer, designer, researcher, pm, reviewer, note_taker, operator, scout.
+
     Keep your output focused — the C-Suite will read the summary; don't dump
     raw tool traces.
     """
@@ -140,6 +153,7 @@ defmodule Tracy.Workers.Claude do
       summary: extract_summary(text),
       files_changed: extract_files_changed(text),
       proposed_next_steps: extract_next_steps(text),
+      spawned_tasks: extract_spawned_tasks(text),
       cost_micros: cost_micros,
       metadata: %{
         "provider" => "claude",
@@ -225,6 +239,45 @@ defmodule Tracy.Workers.Claude do
 
       _ ->
         []
+    end
+  end
+
+  # Parse a `## Proposed Tasks` block of the form:
+  #   - [role] Title — brief
+  # Returns a list of %{role, title, brief}.
+  defp extract_spawned_tasks(text) do
+    case Regex.run(~r/##\s*Proposed\s+Tasks\s*\n((?:\s*[-*]\s*\[[^\]]+\][^\n]*\n?)+)/i, text) do
+      [_, block] ->
+        block
+        |> String.split("\n")
+        |> Enum.map(&parse_proposed_line/1)
+        |> Enum.reject(&is_nil/1)
+
+      _ ->
+        []
+    end
+  end
+
+  defp parse_proposed_line(line) do
+    case Regex.run(~r/^\s*[-*]\s*\[([^\]]+)\]\s*(.+)$/, line) do
+      [_, role, rest] ->
+        # Split title from brief on " — " (em dash) or " - " (hyphen).
+        {title, brief} =
+          case Regex.split(~r/\s+[—–-]\s+/, rest, parts: 2) do
+            [t, b] -> {String.trim(t), String.trim(b)}
+            [t] -> {String.trim(t), ""}
+          end
+
+        role = role |> String.downcase() |> String.trim()
+
+        if role in Tracy.Plans.Task.roles() and title != "" do
+          %{role: role, title: title, brief: brief}
+        else
+          nil
+        end
+
+      _ ->
+        nil
     end
   end
 end
