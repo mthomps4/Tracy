@@ -72,7 +72,12 @@ defmodule Tracy.MixProject do
       # Gate write-capable tools through Claude Code PreToolUse hooks (see TRACY_TOOLING.md).
       {:tidewave, "~> 0.5", only: :dev},
       # pgvector: Ecto type + helpers for the `vector` column type
-      {:pgvector, "~> 0.3"}
+      {:pgvector, "~> 0.3"},
+      # Claude Agent SDK (Elixir): wraps `claude -p` subprocess invocations so
+      # Tracy's calls land on the Max plan SDK credit pool. See
+      # ~/.claude/projects/-home-matt-Code/memory/feedback_claude_sdk_only_not_anthropix.md
+      # for why we use the SDK and not raw anthropix HTTP.
+      {:claude_agent_sdk, "~> 0.1"}
     ]
   end
 

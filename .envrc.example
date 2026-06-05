@@ -1,19 +1,47 @@
-# Copy to .envrc and fill in values, then run: direnv allow
-# See config/runtime.exs for how these are consumed
+# Copy to .envrc and fill in / uncomment values, then run: direnv allow
+# (.envrc itself is gitignored; this file is the committed template.)
+# See config/runtime.exs for how these are consumed.
 
-# Phoenix
+# ── Phoenix ────────────────────────────────────────────────────────────────
 export PORT="4000"
-# export PHX_SERVER="true"  # uncomment for production/release mode
+# export PHX_SERVER="true"     # uncomment for production/release mode
 
-# Anthropic (Tracy uses subscription OAuth via `claude setup-token`, NOT API key).
-# Do NOT set ANTHROPIC_API_KEY — Claude Code would prefer it over the OAuth token
-# and bill at API rates instead of the Max plan's SDK credit pool.
-# unset ANTHROPIC_API_KEY
+# ── LLM adapter ────────────────────────────────────────────────────────────
+# Default (when this var is unset) is Tracy.LLM.Stub — deterministic, free,
+# perfect for dev iteration and CI. Set to "claude" to route through the real
+# Claude Agent SDK (which uses your `claude setup-token` OAuth session).
+#
+# export TRACY_LLM_ADAPTER="claude"
+# export TRACY_CLAUDE_MODEL="sonnet"      # or "opus", "haiku", or a full id
 
-# Voyage embeddings (Phase 1+, for prose/decisions in memory layer)
+# ── Anthropic auth (very important) ─────────────────────────────────────────
+# Tracy uses your Claude *subscription* via the OAuth session created by
+# `claude setup-token`. That OAuth session lives at ~/.claude/.credentials.json
+# and is picked up automatically by the Claude Agent SDK — no env var needed.
+#
+# DO NOT set ANTHROPIC_API_KEY anywhere in this file or your shell environment.
+# If it's set, Claude Code prefers it over the OAuth token and bills every
+# call at API rates against your console balance, bypassing the Max plan's
+# $100/mo SDK credit pool entirely. This is the single most expensive
+# misconfiguration possible.
+#
+# Sanity check before running Tracy:
+#     echo "API key: ${ANTHROPIC_API_KEY:+SET}${ANTHROPIC_API_KEY:-unset}"
+# It should print "unset". If it prints "SET", hunt down where it's exported.
+#
+# The line below defensively unsets it for direnv'd shells. Leave it.
+unset ANTHROPIC_API_KEY
+
+# ── Voyage embeddings (Phase 1+, real provider, optional in dev) ────────────
+# When set, Tracy.Memory.Embeddings can route prose/decision embeddings through
+# Voyage instead of the Stub. Phase 1F still uses Stub by default.
 # export VOYAGE_API_KEY=""
 
-# Production only
+# ── Production only ────────────────────────────────────────────────────────
 # export DATABASE_URL="ecto://USER:PASS@HOST/tracy_prod"
-# export SECRET_KEY_BASE=""  # generate with: mix phx.gen.secret
+# export SECRET_KEY_BASE=""    # generate with: mix phx.gen.secret
 # export PHX_HOST="tracy.local"
+
+# ── One-shot setup (do these ONCE per machine, not in .envrc) ──────────────
+#   $ claude setup-token            # browser flow → ~/.claude/.credentials.json
+#   $ mix ecto.setup                # create + migrate dev/test DBs

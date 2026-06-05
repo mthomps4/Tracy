@@ -22,6 +22,28 @@ end
 
 config :tracy, TracyWeb.Endpoint, http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+# ----------------------------------------------------------------------------
+# LLM adapter selection
+# ----------------------------------------------------------------------------
+# Set TRACY_LLM_ADAPTER=claude in your environment to route real Claude calls
+# through `claude_agent_sdk` (which uses the OAuth session from
+# `claude setup-token`). Otherwise, Tracy stays on the Stub adapter so dev
+# and tests don't accidentally spend SDK credits.
+#
+# If you set TRACY_LLM_ADAPTER=claude, also CONFIRM that ANTHROPIC_API_KEY
+# is NOT set in your environment — if it is, Claude Code prefers it over the
+# OAuth token and bills at API rates (bypassing the Max plan SDK credit pool).
+case System.get_env("TRACY_LLM_ADAPTER") do
+  "claude" ->
+    config :tracy, Tracy.LLM,
+      adapter: Tracy.LLM.Claude,
+      default_model: System.get_env("TRACY_CLAUDE_MODEL", "sonnet")
+
+  _ ->
+    # Stays on the Stub by default — config/config.exs already sets this.
+    :ok
+end
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||
