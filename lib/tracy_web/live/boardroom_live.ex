@@ -23,7 +23,7 @@ defmodule TracyWeb.BoardroomLive do
   """
   use TracyWeb, :live_view
 
-  alias Tracy.{Billing, Session}
+  alias Tracy.{Billing, Plans, Session}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -60,45 +60,157 @@ defmodule TracyWeb.BoardroomLive do
   def handle_event("send", %{"composer" => text}, socket) when byte_size(text) > 0 do
     text = String.trim(text)
 
-    if text == "" do
-      {:noreply, socket}
-    else
-      user_idx = socket.assigns.next_message_index
-      assistant_idx = user_idx + 1
+    cond do
+      text == "" ->
+        {:noreply, socket}
 
-      user_view = %{
-        index: user_idx,
-        role: :user,
-        content: text,
-        streaming?: false,
-        created_at: DateTime.utc_now()
-      }
+      slash_command?(text) ->
+        handle_slash_command(text, socket)
 
-      assistant_view = %{
-        index: assistant_idx,
-        role: :assistant,
-        content: "",
-        streaming?: true,
-        created_at: DateTime.utc_now()
-      }
-
-      :ok = Session.stream_message(socket.assigns.session_id, text)
-
-      socket =
-        socket
-        |> stream_insert(:messages, user_view, dom_id: "msg-#{user_view.index}")
-        |> stream_insert(:messages, assistant_view, dom_id: "msg-#{assistant_view.index}")
-        |> assign(:composer, "")
-        |> assign(:streaming?, true)
-        |> assign(:streaming_buffer, "")
-        |> assign(:streaming_index, assistant_idx)
-        |> assign(:next_message_index, assistant_idx + 1)
-
-      {:noreply, socket}
+      true ->
+        dispatch_user_message(text, socket)
     end
   end
 
   def handle_event("send", _params, socket), do: {:noreply, socket}
+
+  # ---- slash commands ----
+
+  defp slash_command?(text), do: String.starts_with?(text, "/")
+
+  defp handle_slash_command(text, socket) do
+    case parse_command(text) do
+      {:save_as_plan, title} ->
+        save_conversation_as_plan(title, socket)
+
+      :help ->
+        push_system_message(socket, """
+        Available commands:
+
+          /save-as-plan [title]   Capture this conversation as a Plan
+                                  (default title = your last message)
+          /help                   Show this list
+        """)
+
+      {:unknown, name} ->
+        push_system_message(socket, "Unknown command: `/#{name}`. Try `/help`.")
+    end
+  end
+
+  defp parse_command(text) do
+    case String.split(text, " ", parts: 2) do
+      ["/save-as-plan"] -> {:save_as_plan, nil}
+      ["/save-as-plan", rest] -> {:save_as_plan, String.trim(rest)}
+      ["/help"] -> :help
+      ["/" <> name | _] -> {:unknown, name}
+    end
+  end
+
+  defp save_conversation_as_plan(title, socket) do
+    messages = Session.messages(socket.assigns.session_id)
+    last_user = messages |> Enum.reverse() |> Enum.find_value(fn
+      %Tracy.LLM.Message{role: :user, content: c} -> c
+      _ -> nil
+    end)
+
+    title = title || (last_user && first_line(last_user)) || "New plan from boardroom"
+    brief = build_brief(messages)
+
+    attrs = %{
+      title: String.slice(title, 0, 200),
+      brief: brief,
+      source_session_id: socket.assigns.session_id
+    }
+
+    case Plans.create_plan(attrs) do
+      {:ok, plan} ->
+        Phoenix.PubSub.broadcast(Tracy.PubSub, "plans", :plans_changed)
+
+        push_system_message(
+          socket,
+          """
+          Saved as plan: **#{plan.title}**
+          Status: Triage · open it in the Plans tab to add tasks or approve.
+          """
+        )
+
+      {:error, cs} ->
+        push_system_message(socket, "Couldn't save plan: #{inspect(cs.errors, limit: 200)}")
+    end
+  end
+
+  defp build_brief(messages) do
+    # Compose a quick brief from the last few user messages + assistant replies.
+    messages
+    |> Enum.take(-6)
+    |> Enum.map(fn
+      %Tracy.LLM.Message{role: :user, content: c} -> "Matt: #{c}"
+      %Tracy.LLM.Message{role: :assistant, content: c} -> "Tracy: #{c}"
+      _ -> nil
+    end)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join("\n\n")
+    |> String.slice(0, 4000)
+  end
+
+  defp first_line(text), do: text |> String.split("\n", parts: 2) |> List.first() |> String.trim()
+
+  defp push_system_message(socket, content) do
+    idx = socket.assigns.next_message_index
+
+    view = %{
+      index: idx,
+      role: :system,
+      content: content,
+      streaming?: false,
+      created_at: DateTime.utc_now()
+    }
+
+    socket =
+      socket
+      |> stream_insert(:messages, view, dom_id: "msg-#{idx}")
+      |> assign(:composer, "")
+      |> assign(:next_message_index, idx + 1)
+
+    {:noreply, socket}
+  end
+
+  # ---- normal user message dispatch ----
+
+  defp dispatch_user_message(text, socket) do
+    user_idx = socket.assigns.next_message_index
+    assistant_idx = user_idx + 1
+
+    user_view = %{
+      index: user_idx,
+      role: :user,
+      content: text,
+      streaming?: false,
+      created_at: DateTime.utc_now()
+    }
+
+    assistant_view = %{
+      index: assistant_idx,
+      role: :assistant,
+      content: "",
+      streaming?: true,
+      created_at: DateTime.utc_now()
+    }
+
+    :ok = Session.stream_message(socket.assigns.session_id, text)
+
+    socket =
+      socket
+      |> stream_insert(:messages, user_view, dom_id: "msg-#{user_view.index}")
+      |> stream_insert(:messages, assistant_view, dom_id: "msg-#{assistant_view.index}")
+      |> assign(:composer, "")
+      |> assign(:streaming?, true)
+      |> assign(:streaming_buffer, "")
+      |> assign(:streaming_index, assistant_idx)
+      |> assign(:next_message_index, assistant_idx + 1)
+
+    {:noreply, socket}
+  end
 
   @impl true
   def handle_info({:session_event, _id, {:chunk, chunk}}, socket) do
@@ -205,13 +317,14 @@ defmodule TracyWeb.BoardroomLive do
             class={[
               "flex gap-2 sm:gap-3",
               msg.role == :user && "justify-end",
-              msg.role in [:assistant, :error] && "justify-start"
+              msg.role in [:assistant, :error, :system] && "justify-start"
             ]}
           >
             <div class={[
               "max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed sm:max-w-[75%] sm:px-4 sm:py-3 sm:text-base",
               msg.role == :user && "bg-primary text-primary-content rounded-tr-sm",
               msg.role == :assistant && "bg-base-200 text-base-content rounded-tl-sm",
+              msg.role == :system && "border border-accent/40 bg-accent/10 text-base-content rounded-tl-sm",
               msg.role == :error && "border border-error/40 bg-error/10 text-error rounded-tl-sm"
             ]}>
               <%= cond do %>
@@ -223,6 +336,11 @@ defmodule TracyWeb.BoardroomLive do
                 <% msg.role == :error -> %>
                   <div class="flex items-start gap-2">
                     <.icon name="hero-exclamation-triangle-mini" class="mt-0.5 size-4 shrink-0" />
+                    <p class="whitespace-pre-wrap text-xs sm:text-sm">{msg.content}</p>
+                  </div>
+                <% msg.role == :system -> %>
+                  <div class="flex items-start gap-2">
+                    <.icon name="hero-sparkles" class="mt-0.5 size-4 shrink-0 text-accent" />
                     <p class="whitespace-pre-wrap text-xs sm:text-sm">{msg.content}</p>
                   </div>
                 <% true -> %>
