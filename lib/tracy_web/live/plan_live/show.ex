@@ -583,9 +583,12 @@ defmodule TracyWeb.PlanLive.Show do
           <.icon :if={@task.status == "done"} name="hero-check-mini" class="size-3.5" />
         </button>
 
-        <div class="min-w-0 flex-1">
+        <.link
+          navigate={~p"/plans/#{@task.plan_id}/tasks/#{@task.id}"}
+          class="min-w-0 flex-1 group"
+        >
           <p class={[
-            "text-sm sm:text-base",
+            "text-sm sm:text-base group-hover:text-primary",
             @task.status == "done" && "line-through"
           ]}>
             {@task.title}
@@ -597,6 +600,9 @@ defmodule TracyWeb.PlanLive.Show do
               {status_label(@task.status)}
             </span>
             <span :if={@task.duration_ms} class="tabular-nums">{format_duration(@task.duration_ms)}</span>
+            <span :if={brief_preview(@task.brief)} class="hidden truncate normal-case tracking-normal text-base-content/40 sm:block">
+              · {brief_preview(@task.brief)}
+            </span>
           </div>
 
           <div :if={@task.report} class="mt-2 rounded-field bg-base-200/40 px-2 py-1.5 text-xs text-base-content/70">
@@ -605,7 +611,7 @@ defmodule TracyWeb.PlanLive.Show do
               <li :for={step <- next_steps}>{step}</li>
             </ul>
           </div>
-        </div>
+        </.link>
 
         <button
           :if={@task.status in ["backlog", "blocked"]}
@@ -909,6 +915,19 @@ defmodule TracyWeb.PlanLive.Show do
   defp format_scope_value(v) when is_list(v), do: Enum.join(v, ", ")
   defp format_scope_value(v) when is_binary(v), do: v
   defp format_scope_value(v), do: inspect(v)
+
+  defp brief_preview(nil), do: nil
+  defp brief_preview(""), do: nil
+
+  defp brief_preview(brief) do
+    brief
+    |> String.split("\n", trim: true)
+    |> List.first()
+    |> case do
+      nil -> nil
+      first -> String.slice(first, 0, 110)
+    end
+  end
 
   defp format_duration(ms) when ms < 1_000, do: "#{ms}ms"
   defp format_duration(ms) when ms < 60_000, do: "#{div(ms, 1000)}s"

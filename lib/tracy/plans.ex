@@ -100,6 +100,17 @@ defmodule Tracy.Plans do
 
   # ---- Tasks ----
 
+  @doc "Fetch a task (with its plan preloaded), or nil."
+  def get_task(id) do
+    case Repo.get(Task, id) do
+      nil -> nil
+      task -> Repo.preload(task, :plan)
+    end
+  end
+
+  @doc "Fetch a task with its plan preloaded; raises if not found."
+  def get_task!(id), do: Repo.get!(Task, id) |> Repo.preload(:plan)
+
   @doc "Create a task under a plan."
   def create_task(attrs) do
     %Task{}

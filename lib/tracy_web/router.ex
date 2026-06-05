@@ -62,6 +62,7 @@ defmodule TracyWeb.Router do
       live "/boardroom", BoardroomLive
       live "/plans", PlansLive
       live "/plans/:id", PlanLive.Show
+      live "/plans/:plan_id/tasks/:id", TaskLive.Show
     end
 
     get "/assets/:id/download", AssetController, :download
