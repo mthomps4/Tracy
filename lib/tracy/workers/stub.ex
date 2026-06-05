@@ -16,7 +16,15 @@ defmodule Tracy.Workers.Stub do
   @impl true
   def execute(%Task{} = task, opts) do
     delay = Keyword.get(opts, :delay_ms, @default_delay_ms)
-    Process.sleep(delay)
+    progress = Keyword.get(opts, :progress_callback, fn _ -> :ok end)
+
+    # Emit a couple of fake progress events so the live transcript path
+    # has something to exercise without standing up real Claude.
+    progress.(%{kind: :assistant_text, text: "(stub) starting work on #{task.title}"})
+    Process.sleep(div(delay, 2))
+    progress.(%{kind: :tool_use, tool_name: "Stub", tool_input: %{"task" => task.title}, tool_id: "stub_1"})
+    Process.sleep(div(delay, 2))
+    progress.(%{kind: :tool_result, tool_id: "stub_1", text: "ok", is_error: false})
 
     # PM-like roles get a small demo of spawned tasks so the spawn loop
     # is testable without flipping TRACY_WORKERS_ADAPTER=claude.

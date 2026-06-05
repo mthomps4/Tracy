@@ -77,6 +77,57 @@ defmodule Tracy.Workers do
   def subscribe(task_id), do: PubSub.subscribe(Tracy.PubSub, topic(task_id))
 
   @doc """
+  Cancel a running worker for `task_id`. Brutal-kills the adapter task,
+  transitions the plan task to `"canceled"`, and broadcasts
+  `{:worker_canceled, task}`. No-op if no worker is currently running.
+  """
+  @spec cancel(String.t()) :: :ok | {:error, :not_running}
+  def cancel(task_id) when is_binary(task_id) do
+    case find_worker(task_id) do
+      nil -> {:error, :not_running}
+      pid -> GenServer.cast(pid, :cancel)
+    end
+  end
+
+  @doc """
+  Get the live transcript buffer for a running worker. Returns events in
+  chronological order. Returns `{:error, :not_running}` if no worker
+  exists for the task — historical workers' transcripts are not
+  persisted; once the GenServer dies the live feed is gone (the
+  task's `report` is the durable record).
+  """
+  @spec transcript(String.t()) :: {:ok, [map()]} | {:error, :not_running}
+  def transcript(task_id) when is_binary(task_id) do
+    case find_worker(task_id) do
+      nil -> {:error, :not_running}
+      pid -> {:ok, GenServer.call(pid, :transcript)}
+    end
+  end
+
+  @doc "Whether a worker GenServer is currently alive for the given task."
+  @spec running?(String.t()) :: boolean()
+  def running?(task_id), do: find_worker(task_id) != nil
+
+  # DynamicSupervisor doesn't expose child_spec ids in which_children, so
+  # we iterate live children and match by the Server's own state. Cheap —
+  # at most a few workers running concurrently in single-user v1.
+  defp find_worker(task_id) do
+    Supervisor
+    |> DynamicSupervisor.which_children()
+    |> Enum.find_value(fn
+      {_id, pid, _type, _modules} when is_pid(pid) ->
+        try do
+          if :sys.get_state(pid).task_id == task_id, do: pid
+        catch
+          _, _ -> nil
+        end
+
+      _ ->
+        nil
+    end)
+  end
+
+  @doc """
   Get the active adapter for a role from config, falling back to the
   default adapter.
   """

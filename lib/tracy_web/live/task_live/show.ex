@@ -1,11 +1,21 @@
 defmodule TracyWeb.TaskLive.Show do
   @moduledoc """
   Single-task detail view — full brief, timing/cost, worker report, activity
-  stream. The "open in its own page" sibling to the row on `PlanLive.Show`.
+  stream, and a "Live" peek-behind-the-curtain tab with the running
+  transcript + kill switch.
 
-  Activity is synthesised from the task's existing timestamps + report +
-  failure metadata. A `Comments` placeholder card marks where threaded
-  discussion lands next (the path that obviates a Linear sync).
+  ### Tabs
+
+    * **Details** (default) — brief, meta, lifecycle activity stream, and
+      the eventual comment thread. Reads from the task's persisted state.
+    * **Live** — real-time worker transcript (assistant thinking, tool
+      calls, tool results) and a `Cancel` button while the task is
+      `in_progress`. Subscribes to the worker PubSub topic; backfills
+      via `Workers.transcript/1` on mount so a late-arriving viewer
+      still sees the full feed.
+
+  When a task is `in_progress`, the Live tab opens by default — that's
+  what you'd want to see.
   """
   use TracyWeb, :live_view
 
@@ -22,7 +32,6 @@ defmodule TracyWeb.TaskLive.Show do
          |> push_navigate(to: ~p"/plans/#{plan_id}")}
 
       %Task{plan_id: actual_plan_id} = task when actual_plan_id != plan_id ->
-        # Canonical URL has the right plan_id — bounce.
         {:ok, push_navigate(socket, to: ~p"/plans/#{actual_plan_id}/tasks/#{task.id}")}
 
       task ->
@@ -31,12 +40,27 @@ defmodule TracyWeb.TaskLive.Show do
           Workers.subscribe(task.id)
         end
 
-        {:ok,
-         socket
-         |> assign(:page_title, task.title)
-         |> assign(:task, task)
-         |> assign(:show_transition_menu?, false)}
+        {transcript, next_idx} = load_transcript(task)
+
+        socket =
+          socket
+          |> assign(:page_title, task.title)
+          |> assign(:task, task)
+          |> assign(:show_transition_menu?, false)
+          |> assign(:active_tab, default_tab(task))
+          |> assign(:next_event_index, next_idx)
+          |> assign(:worker_running?, Workers.running?(task.id))
+          |> stream(:transcript, transcript, dom_id: &"event-#{&1.index}")
+
+        {:ok, socket}
     end
+  end
+
+  @impl true
+  def handle_params(params, _uri, socket) do
+    tab = params["tab"] || default_tab(socket.assigns.task)
+    tab = if tab in ["details", "live"], do: tab, else: "details"
+    {:noreply, assign(socket, :active_tab, tab)}
   end
 
   # ---- events ----
@@ -60,10 +84,24 @@ defmodule TracyWeb.TaskLive.Show do
   def handle_event("dispatch_worker", _params, socket) do
     case Workers.dispatch(socket.assigns.task.id) do
       {:ok, _pid} ->
-        {:noreply, socket}
+        # Switch to Live so the user immediately sees the transcript fill.
+        {:noreply,
+         socket
+         |> assign(:worker_running?, true)
+         |> push_patch(to: ~p"/plans/#{socket.assigns.task.plan_id}/tasks/#{socket.assigns.task.id}?tab=live")}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Couldn't dispatch: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("cancel_worker", _params, socket) do
+    case Workers.cancel(socket.assigns.task.id) do
+      :ok ->
+        {:noreply, put_flash(socket, :info, "Cancel requested.")}
+
+      {:error, :not_running} ->
+        {:noreply, put_flash(socket, :error, "No worker is running for this task.")}
     end
   end
 
@@ -71,7 +109,34 @@ defmodule TracyWeb.TaskLive.Show do
 
   @impl true
   def handle_info(:plans_changed, socket), do: {:noreply, reload_task(socket)}
-  def handle_info({:worker_event, _task_id, _event}, socket), do: {:noreply, reload_task(socket)}
+
+  def handle_info({:worker_event, _task_id, {:worker_started, _task}}, socket) do
+    # New run kicking off — clear stale transcript, mark running.
+    {:noreply,
+     socket
+     |> assign(:worker_running?, true)
+     |> assign(:next_event_index, 1)
+     |> stream(:transcript, [], reset: true)
+     |> reload_task()}
+  end
+
+  def handle_info({:worker_event, _task_id, {:worker_progress, event}}, socket) do
+    idx = socket.assigns.next_event_index
+    view_event = Map.put(event, :index, idx)
+
+    {:noreply,
+     socket
+     |> stream_insert(:transcript, view_event, dom_id: "event-#{idx}")
+     |> assign(:next_event_index, idx + 1)}
+  end
+
+  def handle_info({:worker_event, _task_id, _event}, socket) do
+    # Completion / failure / cancel / spawned — reload task state.
+    {:noreply,
+     socket
+     |> assign(:worker_running?, false)
+     |> reload_task()}
+  end
 
   # ---- view ----
 
@@ -89,37 +154,261 @@ defmodule TracyWeb.TaskLive.Show do
 
       <.task_header task={@task} show_menu?={@show_transition_menu?} />
 
-      <section class="mt-5">
-        <p class="text-[10px] font-medium uppercase tracking-wider text-base-content/50">Brief</p>
-        <div :if={@task.brief && @task.brief != ""} class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-base-content/80 sm:text-base">
-          {@task.brief}
-        </div>
-        <p :if={!@task.brief or @task.brief == ""} class="mt-2 rounded-box border border-dashed border-base-300/60 bg-base-200/20 px-4 py-5 text-center text-xs text-base-content/50">
-          No brief yet. The title is all we have to go on.
-        </p>
-      </section>
+      <.tab_bar
+        plan_id={@task.plan_id}
+        task_id={@task.id}
+        active={@active_tab}
+        running?={@worker_running?}
+      />
 
-      <section :if={@task.status in ["backlog", "blocked"]} class="mt-5">
-        <button phx-click="dispatch_worker" class="btn btn-primary btn-sm">
-          <.icon name="hero-paper-airplane-mini" class="size-4" />
-          Dispatch worker
-        </button>
-        <p class="mt-1.5 text-[10px] text-base-content/50">
-          Sends this task to the configured adapter for the <span class="font-medium">{@task.role}</span> role.
-        </p>
-      </section>
+      <div :if={@active_tab == "details"}>
+        <section class="mt-5">
+          <p class="text-[10px] font-medium uppercase tracking-wider text-base-content/50">Brief</p>
+          <div :if={@task.brief && @task.brief != ""} class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-base-content/80 sm:text-base">
+            {@task.brief}
+          </div>
+          <p :if={!@task.brief or @task.brief == ""} class="mt-2 rounded-box border border-dashed border-base-300/60 bg-base-200/20 px-4 py-5 text-center text-xs text-base-content/50">
+            No brief yet. The title is all we have to go on.
+          </p>
+        </section>
 
-      <section class="mt-8">
-        <h2 class="mb-3 text-xs font-semibold uppercase tracking-wider text-base-content/60">Activity</h2>
-        <.activity_stream task={@task} />
-      </section>
+        <section :if={@task.status in ["backlog", "blocked"]} class="mt-5">
+          <button phx-click="dispatch_worker" class="btn btn-primary btn-sm">
+            <.icon name="hero-paper-airplane-mini" class="size-4" />
+            Dispatch worker
+          </button>
+          <p class="mt-1.5 text-[10px] text-base-content/50">
+            Sends this task to the configured adapter for the <span class="font-medium">{@task.role}</span> role.
+          </p>
+        </section>
 
-      <section class="mt-8">
-        <.comments_placeholder />
-      </section>
+        <section class="mt-8">
+          <h2 class="mb-3 text-xs font-semibold uppercase tracking-wider text-base-content/60">Activity</h2>
+          <.activity_stream task={@task} />
+        </section>
+
+        <section class="mt-8">
+          <.comments_placeholder />
+        </section>
+      </div>
+
+      <div :if={@active_tab == "live"} class="mt-5">
+        <.live_panel
+          task={@task}
+          running?={@worker_running?}
+          streams={@streams}
+        />
+      </div>
     </Layouts.app>
     """
   end
+
+  attr :plan_id, :any, required: true
+  attr :task_id, :any, required: true
+  attr :active, :string, required: true
+  attr :running?, :boolean, required: true
+
+  defp tab_bar(assigns) do
+    ~H"""
+    <nav class="mt-5 flex gap-1 border-b border-base-300/60 sm:gap-2" aria-label="Task sections">
+      <.tab_link plan_id={@plan_id} task_id={@task_id} tab="details" active={@active} label="Details" />
+      <.tab_link
+        plan_id={@plan_id}
+        task_id={@task_id}
+        tab="live"
+        active={@active}
+        label="Live"
+        running?={@running?}
+      />
+    </nav>
+    """
+  end
+
+  attr :plan_id, :any, required: true
+  attr :task_id, :any, required: true
+  attr :tab, :string, required: true
+  attr :active, :string, required: true
+  attr :label, :string, required: true
+  attr :running?, :boolean, default: false
+
+  defp tab_link(assigns) do
+    is_active = assigns.active == assigns.tab
+    assigns = assign(assigns, :is_active, is_active)
+
+    ~H"""
+    <.link
+      patch={~p"/plans/#{@plan_id}/tasks/#{@task_id}?tab=#{@tab}"}
+      class={[
+        "relative flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+        @is_active && "border-primary text-primary",
+        !@is_active && "border-transparent text-base-content/60 hover:text-base-content"
+      ]}
+      role="tab"
+      aria-selected={to_string(@is_active)}
+    >
+      {@label}
+      <span :if={@tab == "live" and @running?} class="inline-flex items-center">
+        <span class="size-1.5 rounded-full bg-primary web-pulse"></span>
+      </span>
+    </.link>
+    """
+  end
+
+  attr :task, :map, required: true
+  attr :running?, :boolean, required: true
+  attr :streams, :map, required: true
+
+  defp live_panel(assigns) do
+    ~H"""
+    <section class="space-y-4">
+      <.live_header task={@task} running?={@running?} />
+
+      <ol
+        id="transcript"
+        phx-update="stream"
+        class="space-y-2"
+      >
+        <li id="transcript-empty" class="only:flex hidden rounded-box border border-dashed border-base-300/60 bg-base-200/20 px-4 py-8 text-center text-xs text-base-content/50">
+          <%= if @running? do %>
+            Waiting for the first event from the worker…
+          <% else %>
+            No live transcript. Dispatch the worker (Details tab) to watch
+            it work in real time.
+          <% end %>
+        </li>
+
+        <li
+          :for={{dom_id, event} <- @streams.transcript}
+          id={dom_id}
+        >
+          <.transcript_event event={event} />
+        </li>
+      </ol>
+    </section>
+    """
+  end
+
+  attr :task, :map, required: true
+  attr :running?, :boolean, required: true
+
+  defp live_header(assigns) do
+    ~H"""
+    <header class="flex flex-wrap items-center justify-between gap-3 rounded-box border border-base-300/60 bg-base-200/30 px-3 py-2.5 sm:px-4">
+      <div class="flex items-center gap-2">
+        <span :if={@running?} class="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-primary">
+          <span class="size-2 rounded-full bg-primary web-pulse"></span>
+          Live
+        </span>
+        <span :if={!@running?} class="text-xs uppercase tracking-wider text-base-content/50">
+          Idle
+        </span>
+        <span class="text-[11px] text-base-content/50">
+          Worker activity for <span class="font-medium text-base-content/70">{@task.role}</span>
+        </span>
+      </div>
+
+      <button
+        :if={@running?}
+        phx-click="cancel_worker"
+        data-confirm="Cancel this task? The worker will be killed and the task marked canceled."
+        class="btn btn-error btn-sm"
+      >
+        <.icon name="hero-stop-circle" class="size-4" />
+        Cancel
+      </button>
+    </header>
+    """
+  end
+
+  attr :event, :map, required: true
+
+  defp transcript_event(%{event: %{kind: :assistant_text}} = assigns) do
+    ~H"""
+    <div class="rounded-box border border-base-300/60 bg-base-100/60 px-3 py-2 text-sm">
+      <p class="text-[10px] font-medium uppercase tracking-wider text-base-content/50">
+        Thinking
+      </p>
+      <p class="mt-1 whitespace-pre-wrap text-base-content/80">
+        {@event.text}
+      </p>
+    </div>
+    """
+  end
+
+  defp transcript_event(%{event: %{kind: :tool_use}} = assigns) do
+    ~H"""
+    <details class="rounded-box border border-info/40 bg-info/5 px-3 py-2 text-xs">
+      <summary class="cursor-pointer">
+        <span class="text-[10px] font-medium uppercase tracking-wider text-info">
+          Tool · {@event.tool_name}
+        </span>
+        <span class="ml-2 truncate text-base-content/60">
+          {tool_input_summary(@event.tool_input)}
+        </span>
+      </summary>
+      <pre class="mt-1.5 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-base-100/60 p-2 text-[11px] leading-relaxed text-base-content/70">{format_tool_input(@event.tool_input)}</pre>
+    </details>
+    """
+  end
+
+  defp transcript_event(%{event: %{kind: :tool_result, is_error: true}} = assigns) do
+    ~H"""
+    <details class="rounded-box border border-error/40 bg-error/10 px-3 py-2 text-xs text-error">
+      <summary class="cursor-pointer">
+        <span class="text-[10px] font-medium uppercase tracking-wider">
+          Tool error
+        </span>
+      </summary>
+      <pre class="mt-1.5 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-base-100/60 p-2 text-[11px] leading-relaxed text-error/90">{@event.text}</pre>
+    </details>
+    """
+  end
+
+  defp transcript_event(%{event: %{kind: :tool_result}} = assigns) do
+    ~H"""
+    <details class="rounded-box border border-base-300/60 bg-base-200/30 px-3 py-2 text-xs">
+      <summary class="cursor-pointer">
+        <span class="text-[10px] font-medium uppercase tracking-wider text-base-content/50">
+          Tool result
+        </span>
+        <span class="ml-2 truncate text-base-content/60">
+          {result_preview(@event.text)}
+        </span>
+      </summary>
+      <pre class="mt-1.5 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-base-100/60 p-2 text-[11px] leading-relaxed text-base-content/70">{@event.text}</pre>
+    </details>
+    """
+  end
+
+  defp transcript_event(assigns), do: ~H""
+
+  defp tool_input_summary(input) when is_map(input) do
+    cond do
+      cmd = Map.get(input, "command") -> first_line(cmd)
+      pat = Map.get(input, "pattern") -> first_line(pat)
+      path = Map.get(input, "file_path") || Map.get(input, "path") -> path
+      true -> input |> Map.keys() |> Enum.take(3) |> Enum.join(", ")
+    end
+  end
+
+  defp tool_input_summary(_), do: ""
+
+  defp format_tool_input(input) when is_map(input), do: Jason.encode!(input, pretty: true)
+  defp format_tool_input(other), do: inspect(other, pretty: true, limit: :infinity)
+
+  defp result_preview(text) when is_binary(text) do
+    text
+    |> first_line()
+    |> String.slice(0, 120)
+  end
+
+  defp result_preview(_), do: ""
+
+  defp first_line(text) when is_binary(text) do
+    text |> String.split("\n", trim: true) |> List.first() || ""
+  end
+
+  defp first_line(_), do: ""
 
   attr :task, :map, required: true
   attr :show_menu?, :boolean, required: true
@@ -270,7 +559,7 @@ defmodule TracyWeb.TaskLive.Show do
     """
   end
 
-  # ---- activity event derivation ----
+  # ---- activity event derivation (Details tab) ----
 
   defp build_activity_events(task) do
     [
@@ -304,6 +593,24 @@ defmodule TracyWeb.TaskLive.Show do
   defp event_dot(_), do: "bg-base-content/30"
 
   # ---- helpers ----
+
+  defp default_tab(%{status: "in_progress"}), do: "live"
+  defp default_tab(_task), do: "details"
+
+  defp load_transcript(task) do
+    case Workers.transcript(task.id) do
+      {:ok, events} ->
+        indexed =
+          events
+          |> Enum.with_index(1)
+          |> Enum.map(fn {event, idx} -> Map.put(event, :index, idx) end)
+
+        {indexed, length(indexed) + 1}
+
+      {:error, :not_running} ->
+        {[], 1}
+    end
+  end
 
   defp reload_task(socket) do
     assign(socket, :task, Plans.get_task!(socket.assigns.task.id))

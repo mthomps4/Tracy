@@ -64,11 +64,16 @@ defmodule Tracy.Workers.Claude do
     workspace = Plans.workspace_path(task.plan_id)
     prompt = build_prompt(task, workspace)
     sdk_opts = build_options(task, opts, workspace)
+    progress = Keyword.get(opts, :progress_callback, fn _ -> :ok end)
 
     started_at = DateTime.utc_now()
 
     try do
-      sdk_messages = ClaudeAgentSDK.query(prompt, sdk_opts) |> Enum.to_list()
+      sdk_messages =
+        ClaudeAgentSDK.query(prompt, sdk_opts)
+        |> Stream.each(fn msg -> emit_progress(msg, progress) end)
+        |> Enum.to_list()
+
       completed_at = DateTime.utc_now()
 
       {:ok, build_report(task, sdk_messages, started_at, completed_at)}
@@ -82,6 +87,58 @@ defmodule Tracy.Workers.Claude do
         {:error, {:claude_sdk_error, exception}}
     end
   end
+
+  # ---- progress emission ----
+
+  # Translate SDK message into one-or-more transcript events for the UI.
+  # Assistant text → :assistant_text; tool_use blocks → :tool_use;
+  # user messages carrying tool_result blocks → :tool_result. System +
+  # final result messages are skipped (they're noise for the live view).
+  defp emit_progress(%ClaudeAgentSDK.Message{type: :assistant, data: %{message: %{"content" => content}}}, progress)
+       when is_list(content) do
+    Enum.each(content, fn
+      %{"type" => "text", "text" => text} when is_binary(text) ->
+        text = String.trim(text)
+        if text != "", do: progress.(%{kind: :assistant_text, text: text})
+
+      %{"type" => "tool_use", "id" => id, "name" => name, "input" => input} ->
+        progress.(%{kind: :tool_use, tool_name: name, tool_input: input, tool_id: id})
+
+      _ ->
+        :ok
+    end)
+  end
+
+  defp emit_progress(%ClaudeAgentSDK.Message{type: :user, data: %{message: %{"content" => content}}}, progress)
+       when is_list(content) do
+    Enum.each(content, fn
+      %{"type" => "tool_result", "tool_use_id" => id} = block ->
+        progress.(%{
+          kind: :tool_result,
+          tool_id: id,
+          text: tool_result_text(block),
+          is_error: Map.get(block, "is_error", false)
+        })
+
+      _ ->
+        :ok
+    end)
+  end
+
+  defp emit_progress(_msg, _progress), do: :ok
+
+  defp tool_result_text(%{"content" => content}) when is_binary(content), do: content
+
+  defp tool_result_text(%{"content" => content}) when is_list(content) do
+    content
+    |> Enum.map(fn
+      %{"type" => "text", "text" => t} -> t
+      other -> inspect(other)
+    end)
+    |> Enum.join("\n")
+  end
+
+  defp tool_result_text(_), do: ""
 
   # ---- prompt construction ----
 

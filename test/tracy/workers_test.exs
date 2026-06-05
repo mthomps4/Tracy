@@ -108,6 +108,88 @@ defmodule Tracy.WorkersTest do
     end
   end
 
+  describe "progress events + transcript" do
+    test "Stub emits assistant_text + tool_use + tool_result events", %{} do
+      {:ok, plan} = Plans.create_plan(%{title: "carrier"})
+      {:ok, task} = Plans.create_task(%{plan_id: plan.id, title: "watch me", role: "engineer"})
+      Workers.subscribe(task.id)
+
+      assert {:ok, _pid} =
+               Workers.dispatch(task, adapter: Stub, adapter_opts: [delay_ms: 20])
+
+      assert_receive {:worker_event, _, {:worker_progress, %{kind: :assistant_text, text: text}}}, 1_000
+      assert text =~ "watch me"
+
+      assert_receive {:worker_event, _, {:worker_progress, %{kind: :tool_use, tool_name: "Stub"}}}, 1_000
+      assert_receive {:worker_event, _, {:worker_progress, %{kind: :tool_result, is_error: false}}}, 1_000
+      assert_receive {:worker_event, _, {:worker_completed, _, _}}, 2_000
+    end
+  end
+
+  describe "cancel/1" do
+    test "brutal-kills the running adapter and transitions task to canceled" do
+      {:ok, plan} = Plans.create_plan(%{title: "cancelable"})
+
+      {:ok, task} =
+        Plans.create_task(%{plan_id: plan.id, title: "long running", role: "engineer"})
+
+      Workers.subscribe(task.id)
+
+      # 5s delay — plenty of time to cancel.
+      assert {:ok, _pid} =
+               Workers.dispatch(task, adapter: Stub, adapter_opts: [delay_ms: 5_000])
+
+      assert_receive {:worker_event, _, {:worker_started, _}}, 1_000
+
+      assert :ok = Workers.cancel(task.id)
+
+      assert_receive {:worker_event, _, {:worker_canceled, canceled}}, 1_000
+      assert canceled.status == "canceled"
+    end
+
+    test "returns {:error, :not_running} when no worker is alive" do
+      assert {:error, :not_running} = Workers.cancel(Ecto.UUID.generate())
+    end
+  end
+
+  describe "transcript/1" do
+    test "returns buffered events while the worker is running" do
+      {:ok, plan} = Plans.create_plan(%{title: "transcripted"})
+
+      {:ok, task} =
+        Plans.create_task(%{plan_id: plan.id, title: "show me", role: "engineer"})
+
+      Workers.subscribe(task.id)
+
+      assert {:ok, _pid} =
+               Workers.dispatch(task, adapter: Stub, adapter_opts: [delay_ms: 200])
+
+      # Wait until at least one progress event has fired.
+      assert_receive {:worker_event, _, {:worker_progress, _}}, 1_000
+
+      assert {:ok, events} = Workers.transcript(task.id)
+      assert is_list(events)
+      assert Enum.any?(events, &(&1.kind == :assistant_text))
+    end
+
+    test "returns :not_running after the worker has completed" do
+      {:ok, plan} = Plans.create_plan(%{title: "done already"})
+
+      {:ok, task} =
+        Plans.create_task(%{plan_id: plan.id, title: "fast", role: "engineer"})
+
+      Workers.subscribe(task.id)
+      assert {:ok, _pid} = Workers.dispatch(task, adapter: Stub, adapter_opts: [delay_ms: 5])
+      assert_receive {:worker_event, _, {:worker_completed, _, _}}, 2_000
+
+      # GenServer has stopped — transcript fetch should report not_running.
+      # Slight delay so the DynamicSupervisor's child-list catches up with
+      # the :normal exit.
+      Process.sleep(50)
+      assert {:error, :not_running} = Workers.transcript(task.id)
+    end
+  end
+
   describe "adapter_for_role/1" do
     test "falls back to default_adapter when role has no override" do
       Application.put_env(:tracy, Workers,

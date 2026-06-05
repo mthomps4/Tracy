@@ -5,20 +5,44 @@ defmodule Tracy.Workers.Server do
   Lifecycle:
 
       :starting → marks task in_progress (assigned_at stamped) → broadcasts
-      :running  → calls adapter.execute/2 (synchronous inside the GenServer)
+      :running  → spawns a Task that calls `adapter.execute/2`; while it
+                  runs, the adapter's `:progress_callback` opt streams
+                  events back here for transcript buffering + PubSub
       :completed → records report via Plans.complete_task/3 (status → done)
       :failed   → marks task blocked with the failure reason in metadata
+      :canceled → external `Workers.cancel/1` — Task.shutdown brutal-kills
+                  the in-flight adapter; task transitions to canceled
 
-  Broadcasts state changes on PubSub topic `worker:<task_id>` so the plan
-  detail view can update live. Also broadcasts on `plans` so the list view
-  reflects status transitions.
+  Broadcasts on PubSub topic `worker:<task_id>`:
+
+      {:worker_started, task}
+      {:worker_progress, %{kind, text, tool_name, tool_input, tool_id, at}}
+      {:worker_completed, task, report}
+      {:worker_failed, task, reason}
+      {:worker_canceled, task}
+      {:worker_spawned_tasks, [new_task, ...]}
+
+  Also broadcasts `:plans_changed` on the `plans` topic for the list view.
   """
   use GenServer, restart: :transient
 
   alias Phoenix.PubSub
   alias Tracy.Plans
 
-  defstruct [:task_id, :task, :adapter, :adapter_opts, :status, :report, :error]
+  # Bound the in-memory transcript so a chatty worker doesn't grow forever.
+  @transcript_cap 500
+
+  defstruct [
+    :task_id,
+    :task,
+    :adapter,
+    :adapter_opts,
+    :status,
+    :report,
+    :error,
+    :sdk_task,
+    transcript: []
+  ]
 
   # ---- client API ----
 
@@ -55,9 +79,72 @@ defmodule Tracy.Workers.Server do
   @impl true
   def handle_info(:run, state) do
     state = mark_in_progress(state)
-    state = execute_adapter(state)
-    {:stop, :normal, state}
+    {:noreply, spawn_adapter(state)}
   end
+
+  # Progress event streamed from the adapter's callback.
+  def handle_info({:transcript, event}, state) do
+    event = Map.put_new(event, :at, DateTime.utc_now())
+    broadcast(state.task_id, {:worker_progress, event})
+
+    new_transcript =
+      [event | state.transcript]
+      |> Enum.take(@transcript_cap)
+
+    {:noreply, %{state | transcript: new_transcript}}
+  end
+
+  # Task.async result — adapter returned a value.
+  def handle_info({ref, result}, %{sdk_task: %Task{ref: ref}} = state) do
+    Process.demonitor(ref, [:flush])
+
+    state =
+      case result do
+        {:ok, report} -> complete(state, report)
+        {:error, reason} -> fail(state, reason)
+        other -> fail(state, {:bad_adapter_return, other})
+      end
+
+    {:stop, :normal, %{state | sdk_task: nil}}
+  end
+
+  # Task crashed before sending a result.
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %{sdk_task: %Task{ref: ref}} = state)
+      when reason != :normal do
+    state = fail(state, {:adapter_crashed, reason})
+    {:stop, :normal, %{state | sdk_task: nil}}
+  end
+
+  # Stale messages (e.g. from a Task already shut down via cancel).
+  def handle_info({ref, _result}, state) when is_reference(ref), do: {:noreply, state}
+  def handle_info({:DOWN, ref, _, _, _}, state) when is_reference(ref), do: {:noreply, state}
+
+  @impl true
+  def handle_call(:transcript, _from, state) do
+    {:reply, Enum.reverse(state.transcript), state}
+  end
+
+  @impl true
+  def handle_cast(:cancel, %{sdk_task: %Task{} = sdk_task} = state) do
+    # Brutal-kill the adapter Task and any subprocess (Port) it owns.
+    Task.shutdown(sdk_task, :brutal_kill)
+
+    state =
+      case Tracy.Repo.get(Tracy.Plans.Task, state.task_id) do
+        nil ->
+          state
+
+        task ->
+          {:ok, canceled} = Plans.transition_task(task, "canceled")
+          broadcast(state.task_id, {:worker_canceled, canceled})
+          broadcast_plans()
+          %{state | task: canceled, status: :canceled}
+      end
+
+    {:stop, :normal, %{state | sdk_task: nil}}
+  end
+
+  def handle_cast(:cancel, state), do: {:stop, :normal, state}
 
   # ---- helpers ----
 
@@ -72,20 +159,29 @@ defmodule Tracy.Workers.Server do
     %{state | task: started_task, status: :running}
   end
 
-  defp execute_adapter(state) do
-    case state.adapter.execute(state.task, state.adapter_opts) do
-      {:ok, report} ->
-        complete(state, report)
+  defp spawn_adapter(state) do
+    parent = self()
 
-      {:error, reason} ->
-        fail(state, reason)
+    callback = fn event ->
+      send(parent, {:transcript, event})
     end
-  rescue
-    exception ->
-      fail(state, {:exception, exception})
-  catch
-    kind, value ->
-      fail(state, {kind, value})
+
+    adapter = state.adapter
+    task = state.task
+    opts = Keyword.put(state.adapter_opts, :progress_callback, callback)
+
+    sdk_task =
+      Task.async(fn ->
+        try do
+          adapter.execute(task, opts)
+        rescue
+          exception -> {:error, {:exception, exception}}
+        catch
+          kind, value -> {:error, {kind, value}}
+        end
+      end)
+
+    %{state | sdk_task: sdk_task}
   end
 
   defp complete(state, report) do
