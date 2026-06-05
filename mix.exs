@@ -70,7 +70,9 @@ defmodule Tracy.MixProject do
       # Tidewave: runtime introspection MCP for AI-assisted Phoenix dev (dev-only).
       # Exposes SQL exec, project eval, Ecto schema inspection, log tailing.
       # Gate write-capable tools through Claude Code PreToolUse hooks (see TRACY_TOOLING.md).
-      {:tidewave, "~> 0.5", only: :dev}
+      {:tidewave, "~> 0.5", only: :dev},
+      # pgvector: Ecto type + helpers for the `vector` column type
+      {:pgvector, "~> 0.3"}
     ]
   end
 

@@ -22,7 +22,10 @@ config :tracy, :scopes,
 
 config :tracy,
   ecto_repos: [Tracy.Repo],
-  generators: [timestamp_type: :utc_datetime]
+  generators: [timestamp_type: :utc_datetime, binary_id: true]
+
+# Register the pgvector Postgrex extension so the `vector` column type works in Ecto.
+config :tracy, Tracy.Repo, types: Tracy.PostgresTypes
 
 # Swoosh: local-only mail in dev (/dev/mailbox), no SMTP. Prod adapter set in runtime.exs if/when needed.
 config :tracy, Tracy.Mailer, adapter: Swoosh.Adapters.Local
