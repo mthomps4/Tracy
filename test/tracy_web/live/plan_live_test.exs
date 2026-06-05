@@ -20,10 +20,18 @@ defmodule TracyWeb.PlanLiveTest do
       %{conn: log_in_user(conn, user), user: user, plan: plan}
     end
 
-    test "renders title, project, brief", %{conn: conn, plan: plan} do
+    test "renders title and project on default Tasks tab", %{conn: conn, plan: plan} do
       {:ok, _view, html} = live(conn, ~p"/plans/#{plan.id}")
       assert html =~ "My plan"
       assert html =~ "tracy"
+      # Tabs visible
+      assert html =~ "Tasks"
+      assert html =~ "Whiteboard"
+      assert html =~ "Brief"
+    end
+
+    test "Brief tab shows the brief content", %{conn: conn, plan: plan} do
+      {:ok, _view, html} = live(conn, ~p"/plans/#{plan.id}?tab=brief")
       assert html =~ "Some brief"
     end
 
@@ -65,6 +73,11 @@ defmodule TracyWeb.PlanLiveTest do
       {:ok, view, _html} = live(conn, ~p"/plans/#{plan.id}")
       view |> element("button[phx-click='toggle_task_menu']") |> render_click()
       view |> element("button[phx-value-to='done']") |> render_click()
+
+      # Done tasks are hidden by the default 'Active' filter — switch to 'All'.
+      view
+      |> element("button[phx-value-status='all']")
+      |> render_click()
 
       html = render(view)
       assert html =~ "do this"
