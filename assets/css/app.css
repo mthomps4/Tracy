@@ -1,54 +1,70 @@
-/* See the Tailwind configuration guide for advanced usage
-   https://tailwindcss.com/docs/configuration */
+/* Tracy stylesheet — Spidey & His Amazing Friends vibe
+ * Tracy is the boardroom AI; theme leans into her cyan with Spider-Man heritage red/blue accents.
+ *
+ * Heritage of the Phoenix 1.8 phx.new app.css:
+ *   - daisyUI for semantic component theming (btn-primary, alert-error, etc.)
+ *   - Heroicons via the `hero-*` plugin
+ *   - LiveView phx-loading custom variants
+ *   - data-theme attribute for dark/light mode
+ */
 
 @import "tailwindcss" source(none);
 @source "../css";
 @source "../js";
 @source "../../lib/tracy_web";
 
-/* A Tailwind plugin that makes "hero-#{ICON}" classes available.
-   The heroicons installation itself is managed by your mix.exs */
 @plugin "../vendor/heroicons";
 
-/* daisyUI Tailwind Plugin. You can update this file by fetching the latest version with:
-   curl -sLO https://github.com/saadeghi/daisyui/releases/latest/download/daisyui.js
-   Make sure to look at the daisyUI changelog: https://daisyui.com/docs/changelog/ */
 @plugin "../vendor/daisyui" {
   themes: false;
 }
 
-/* daisyUI theme plugin. You can update this file by fetching the latest version with:
-  curl -sLO https://github.com/saadeghi/daisyui/releases/latest/download/daisyui-theme.js
-  We ship with two themes, a light one inspired on Phoenix colors and a dark one inspired
-  on Elixir colors. Build your own at: https://daisyui.com/theme-generator/ */
+/* -------------------------------------------------------------------
+ * Tracy theme — default dark boardroom palette
+ *   primary   = Tracy cyan       (her signature glow)
+ *   secondary = Spider red       (heritage)
+ *   accent    = Web blue         (classic Spidey blue)
+ *   base      = boardroom slate  (the deep backdrop)
+ * ------------------------------------------------------------------- */
 @plugin "../vendor/daisyui-theme" {
-  name: "dark";
-  default: false;
+  name: "tracy";
+  default: true;
   prefersdark: true;
   color-scheme: "dark";
-  --color-base-100: oklch(30.33% 0.016 252.42);
-  --color-base-200: oklch(25.26% 0.014 253.1);
-  --color-base-300: oklch(20.15% 0.012 254.09);
-  --color-base-content: oklch(97.807% 0.029 256.847);
-  --color-primary: oklch(58% 0.233 277.117);
-  --color-primary-content: oklch(96% 0.018 272.314);
-  --color-secondary: oklch(58% 0.233 277.117);
-  --color-secondary-content: oklch(96% 0.018 272.314);
-  --color-accent: oklch(60% 0.25 292.717);
-  --color-accent-content: oklch(96% 0.016 293.756);
-  --color-neutral: oklch(37% 0.044 257.287);
-  --color-neutral-content: oklch(98% 0.003 247.858);
-  --color-info: oklch(58% 0.158 241.966);
-  --color-info-content: oklch(97% 0.013 236.62);
-  --color-success: oklch(60% 0.118 184.704);
-  --color-success-content: oklch(98% 0.014 180.72);
-  --color-warning: oklch(66% 0.179 58.318);
-  --color-warning-content: oklch(98% 0.022 95.277);
-  --color-error: oklch(58% 0.253 17.585);
-  --color-error-content: oklch(96% 0.015 12.422);
-  --radius-selector: 0.25rem;
-  --radius-field: 0.25rem;
-  --radius-box: 0.5rem;
+
+  /* surfaces */
+  --color-base-100: oklch(18% 0.025 240);
+  --color-base-200: oklch(22% 0.025 240);
+  --color-base-300: oklch(28% 0.022 240);
+  --color-base-content: oklch(95% 0.025 200);
+
+  /* Tracy cyan */
+  --color-primary: oklch(72% 0.16 200);
+  --color-primary-content: oklch(15% 0.04 240);
+
+  /* Spider red */
+  --color-secondary: oklch(58% 0.24 25);
+  --color-secondary-content: oklch(98% 0.02 25);
+
+  /* Web blue */
+  --color-accent: oklch(55% 0.20 250);
+  --color-accent-content: oklch(98% 0.02 250);
+
+  /* neutral / info / success / warning / error */
+  --color-neutral: oklch(35% 0.025 240);
+  --color-neutral-content: oklch(95% 0.02 240);
+  --color-info: oklch(70% 0.16 220);
+  --color-info-content: oklch(15% 0.04 240);
+  --color-success: oklch(70% 0.18 155);
+  --color-success-content: oklch(15% 0.04 240);
+  --color-warning: oklch(75% 0.18 75);
+  --color-warning-content: oklch(15% 0.04 240);
+  --color-error: oklch(60% 0.24 25);
+  --color-error-content: oklch(98% 0.02 25);
+
+  --radius-selector: 0.375rem;
+  --radius-field: 0.375rem;
+  --radius-box: 0.625rem;
   --size-selector: 0.21875rem;
   --size-field: 0.21875rem;
   --border: 1.5px;
@@ -56,34 +72,41 @@
   --noise: 0;
 }
 
+/* -------------------------------------------------------------------
+ * Tracy theme — light variant (for when Tailscale's bright outside)
+ * ------------------------------------------------------------------- */
 @plugin "../vendor/daisyui-theme" {
-  name: "light";
-  default: true;
+  name: "tracy-light";
+  default: false;
   prefersdark: false;
   color-scheme: "light";
-  --color-base-100: oklch(98% 0 0);
-  --color-base-200: oklch(96% 0.001 286.375);
-  --color-base-300: oklch(92% 0.004 286.32);
-  --color-base-content: oklch(21% 0.006 285.885);
-  --color-primary: oklch(70% 0.213 47.604);
-  --color-primary-content: oklch(98% 0.016 73.684);
-  --color-secondary: oklch(55% 0.027 264.364);
-  --color-secondary-content: oklch(98% 0.002 247.839);
-  --color-accent: oklch(0% 0 0);
-  --color-accent-content: oklch(100% 0 0);
-  --color-neutral: oklch(44% 0.017 285.786);
-  --color-neutral-content: oklch(98% 0 0);
-  --color-info: oklch(62% 0.214 259.815);
-  --color-info-content: oklch(97% 0.014 254.604);
-  --color-success: oklch(70% 0.14 182.503);
-  --color-success-content: oklch(98% 0.014 180.72);
-  --color-warning: oklch(66% 0.179 58.318);
-  --color-warning-content: oklch(98% 0.022 95.277);
-  --color-error: oklch(58% 0.253 17.585);
-  --color-error-content: oklch(96% 0.015 12.422);
-  --radius-selector: 0.25rem;
-  --radius-field: 0.25rem;
-  --radius-box: 0.5rem;
+
+  --color-base-100: oklch(98% 0.005 230);
+  --color-base-200: oklch(95% 0.008 230);
+  --color-base-300: oklch(90% 0.012 230);
+  --color-base-content: oklch(20% 0.04 240);
+
+  --color-primary: oklch(55% 0.18 200);
+  --color-primary-content: oklch(98% 0.02 200);
+  --color-secondary: oklch(55% 0.24 25);
+  --color-secondary-content: oklch(98% 0.02 25);
+  --color-accent: oklch(45% 0.20 250);
+  --color-accent-content: oklch(98% 0.02 250);
+
+  --color-neutral: oklch(40% 0.025 240);
+  --color-neutral-content: oklch(98% 0.02 240);
+  --color-info: oklch(55% 0.16 220);
+  --color-info-content: oklch(98% 0.02 220);
+  --color-success: oklch(55% 0.18 155);
+  --color-success-content: oklch(98% 0.02 155);
+  --color-warning: oklch(70% 0.18 75);
+  --color-warning-content: oklch(15% 0.04 75);
+  --color-error: oklch(55% 0.24 25);
+  --color-error-content: oklch(98% 0.02 25);
+
+  --radius-selector: 0.375rem;
+  --radius-field: 0.375rem;
+  --radius-box: 0.625rem;
   --size-selector: 0.21875rem;
   --size-field: 0.21875rem;
   --border: 1.5px;
@@ -91,15 +114,55 @@
   --noise: 0;
 }
 
-/* Add variants based on LiveView classes */
+/* LiveView loading states */
 @custom-variant phx-click-loading (.phx-click-loading&, .phx-click-loading &);
 @custom-variant phx-submit-loading (.phx-submit-loading&, .phx-submit-loading &);
 @custom-variant phx-change-loading (.phx-change-loading&, .phx-change-loading &);
 
-/* Use the data attribute for dark mode  */
-@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+/* dark mode variant (default theme is already dark; keep this for explicit toggles) */
+@custom-variant dark (&:where([data-theme=tracy], [data-theme=tracy] *));
 
-/* Make LiveView wrapper divs transparent for layout */
+/* LiveView wrapper divs */
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
-/* This file is for your main application CSS */
+/* -------------------------------------------------------------------
+ * Tracy-specific styles
+ * ------------------------------------------------------------------- */
+
+/* Subtle spider-web texture across the page (default dark theme).
+ * Renders as a 240px-tile SVG of a single radial web at ~3% opacity.
+ * Hidden in light theme to keep it crisp.
+ */
+body {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240' viewBox='0 0 240 240'><g fill='none' stroke='%2306b6d4' stroke-width='0.6' opacity='0.08'><circle cx='120' cy='120' r='30'/><circle cx='120' cy='120' r='60'/><circle cx='120' cy='120' r='90'/><circle cx='120' cy='120' r='115'/><line x1='120' y1='5' x2='120' y2='235'/><line x1='5' y1='120' x2='235' y2='120'/><line x1='38' y1='38' x2='202' y2='202'/><line x1='202' y1='38' x2='38' y2='202'/></g></svg>");
+  background-repeat: repeat;
+  background-attachment: fixed;
+}
+
+[data-theme="tracy-light"] body {
+  background-image: none;
+}
+
+/* The Tracy badge — small "T" inside a web, used inline in headings */
+.tracy-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5em;
+  height: 1.5em;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+  color: var(--color-primary-content);
+  font-weight: 800;
+  font-size: 0.65em;
+  line-height: 1;
+}
+
+/* Web-pulse animation — used on cost-meter accents and active worker badges */
+@keyframes web-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-primary) 50%, transparent); }
+  50%      { box-shadow: 0 0 0 8px color-mix(in oklab, var(--color-primary) 0%, transparent); }
+}
+.web-pulse {
+  animation: web-pulse 2.2s ease-in-out infinite;
+}

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Tracy wordmark — logo mark + "tracy" lowercase in a clean sans.
+     Used in the navbar where the mark alone is too cryptic.
+     Width-flexible; viewBox sized for ~32px height when rendered. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 64" fill="none">
+  <!-- mark on left -->
+  <g transform="translate(8 8) scale(0.48)">
+    <g stroke="currentColor" stroke-width="0.9" stroke-linecap="round" opacity="0.45">
+      <circle cx="50" cy="50" r="46"/>
+      <circle cx="50" cy="50" r="32"/>
+      <circle cx="50" cy="50" r="18"/>
+    </g>
+    <g stroke="currentColor" stroke-width="0.9" stroke-linecap="round" opacity="0.55">
+      <line x1="50" y1="4" x2="50" y2="96"/>
+      <line x1="4" y1="50" x2="96" y2="50"/>
+      <line x1="17.5" y1="17.5" x2="82.5" y2="82.5"/>
+      <line x1="82.5" y1="17.5" x2="17.5" y2="82.5"/>
+    </g>
+    <path d="M30 38 H70 V47 H55 V78 H45 V47 H30 Z" fill="currentColor"/>
+    <circle cx="50" cy="50" r="2" fill="currentColor"/>
+  </g>
+  <!-- wordmark -->
+  <text x="68" y="44"
+        font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+        font-size="32"
+        font-weight="700"
+        letter-spacing="-0.02em"
+        fill="currentColor">tracy</text>
+</svg>
