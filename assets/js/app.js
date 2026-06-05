@@ -25,11 +25,45 @@ import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/tracy"
 import topbar from "../vendor/topbar"
 
+// ---- Boardroom hooks -----------------------------------------------------
+const ScrollToBottom = {
+  mounted() {
+    this.scroll()
+    this.observer = new MutationObserver(() => this.scroll())
+    this.observer.observe(this.el, {childList: true, subtree: true, characterData: true})
+  },
+  updated() { this.scroll() },
+  destroyed() { this.observer && this.observer.disconnect() },
+  scroll() { this.el.scrollTop = this.el.scrollHeight }
+}
+
+const GrowComposer = {
+  mounted() {
+    this.grow()
+    this.el.addEventListener("input", () => this.grow())
+  },
+  grow() {
+    this.el.style.height = "auto"
+    const cap = 6 * parseFloat(getComputedStyle(this.el).lineHeight || "24")
+    this.el.style.height = Math.min(this.el.scrollHeight, cap) + "px"
+  }
+}
+
+// Submit the composer on plain Enter (Shift+Enter inserts newline).
+window.addEventListener("tracy:submit-on-enter", (e) => {
+  if (e.detail && e.detail.shiftKey) return
+  const form = e.target && e.target.closest("form")
+  if (form) {
+    e.preventDefault && e.preventDefault()
+    form.requestSubmit && form.requestSubmit()
+  }
+})
+
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks},
+  hooks: {...colocatedHooks, ScrollToBottom, GrowComposer},
 })
 
 // Show progress bar on live navigation and form submits

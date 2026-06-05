@@ -57,7 +57,10 @@ defmodule TracyWeb.Router do
   scope "/", TracyWeb do
     pipe_through [:browser, :require_authenticated_user]
 
-    get "/boardroom", PageController, :boardroom
+    live_session :authenticated,
+      on_mount: [{TracyWeb.UserAuth, :require_authenticated}] do
+      live "/boardroom", BoardroomLive
+    end
 
     get "/users/settings", UserSettingsController, :edit
     put "/users/settings", UserSettingsController, :update

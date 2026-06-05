@@ -75,6 +75,49 @@ defmodule TracyWeb.UserAuth do
     end
   end
 
+  @doc """
+  LiveView on_mount callback. Resolves the session token to a `current_scope`
+  assign and either allows the mount or redirects to log-in.
+
+  Usage:
+
+      live_session :authenticated, on_mount: [{TracyWeb.UserAuth, :require_authenticated}] do
+        live "/boardroom", BoardroomLive
+      end
+  """
+  def on_mount(:require_authenticated, _params, session, socket) do
+    socket = mount_current_scope(socket, session)
+
+    if socket.assigns.current_scope && socket.assigns.current_scope.user do
+      {:cont, socket}
+    else
+      {:halt,
+       socket
+       |> Phoenix.LiveView.put_flash(:error, "You must log in to access this page.")
+       |> Phoenix.LiveView.redirect(to: ~p"/users/log-in")}
+    end
+  end
+
+  def on_mount(:mount_current_scope, _params, session, socket) do
+    {:cont, mount_current_scope(socket, session)}
+  end
+
+  defp mount_current_scope(socket, session) do
+    Phoenix.Component.assign_new(socket, :current_scope, fn ->
+      user =
+        case session["user_token"] do
+          nil -> nil
+          token ->
+            case Accounts.get_user_by_session_token(token) do
+              {user, _at} -> user
+              _ -> nil
+            end
+        end
+
+      Scope.for_user(user)
+    end)
+  end
+
   defp ensure_user_token(conn) do
     if token = get_session(conn, :user_token) do
       {token, conn}
