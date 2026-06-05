@@ -35,3 +35,43 @@ tracy-*.tar
 npm-debug.log
 /assets/node_modules/
 
+# ---- Tracy additions ----
+
+# direnv — never commit actual dev env (.envrc.example is the template)
+.envrc
+
+# Docker / runtime env — never commit actual env (.env.example is the template)
+.env
+
+# Claude Code per-project: commit skills/agents/commands/hooks/settings.json,
+# ignore only machine-local settings and transient state
+.claude/settings.local.json
+.claude/.session/
+.claude/cache/
+.claude/*.log
+
+# SOPS-decrypted secrets (encrypted forms ARE safe to commit; decrypted are not)
+*.dec
+*.dec.yaml
+*.dec.json
+secrets/*.plain.*
+
+# Editor swap files (vim/nvim)
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Elixir LSP caches (ElixirLS / Lexical / Next-LS — keep IDE state out of git)
+.elixir_ls/
+.lexical/
+.next_ls/
+
+# Local-only IDE / editor configs (committed configs live in shared dotfiles)
+/.vscode/
+/.idea/
+
+# Coverage / profiling output beyond /cover/
+/excoveralls.json
