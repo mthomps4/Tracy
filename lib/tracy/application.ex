@@ -12,9 +12,10 @@ defmodule Tracy.Application do
       Tracy.Repo,
       {DNSCluster, query: Application.get_env(:tracy, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Tracy.PubSub},
-      # Start a worker by calling: Tracy.Worker.start_link(arg)
-      # {Tracy.Worker, arg},
-      # Start to serve requests, typically the last entry
+      # Session machinery — Registry locates Tracy.Session.Server processes by id;
+      # DynamicSupervisor owns their lifecycle.
+      {Registry, keys: :unique, name: Tracy.Session.Registry},
+      Tracy.Session.Supervisor,
       TracyWeb.Endpoint
     ]
 
