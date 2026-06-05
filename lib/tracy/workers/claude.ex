@@ -17,11 +17,15 @@ defmodule Tracy.Workers.Claude do
   ## Tool surface
 
   Workers get a **wider tool surface than the boardroom**. They're meant to
-  actually do work, including modifying files. By default:
+  actually do work, including modifying files. The default surface is:
 
       Read, Grep, Glob, WebSearch, WebFetch, Bash, Edit, Write
 
-  Per-role allowlists can override via `:allowed_tools` adapter opt.
+  Per-role defaults trim that down where it makes sense — designers drop
+  `Edit` (their job is producing new artifacts, not editing code);
+  researchers and reviewers drop write capability entirely. See
+  `role_allowed_tools/1`. Callers can still override with the
+  `:allowed_tools` adapter opt for one-off dispatches.
 
   ## v1 scope
 
@@ -45,6 +49,14 @@ defmodule Tracy.Workers.Claude do
 
   @default_allowed_tools ~w(Read Grep Glob WebSearch WebFetch Bash Edit Write)
   @default_max_turns 30
+
+  # Per-role tool defaults. A role can override via the `:allowed_tools`
+  # adapter opt — these are just the sensible "if you didn't say otherwise"
+  # surface for each role.
+  @designer_tools ~w(Read Grep Glob WebSearch WebFetch Bash Write)
+  @researcher_tools ~w(Read Grep Glob WebSearch WebFetch)
+  @reviewer_tools ~w(Read Grep Glob WebSearch WebFetch)
+  @note_taker_tools ~w(Read Grep Glob Write)
 
   @impl true
   def execute(%Task{} = task, opts) do
@@ -107,7 +119,7 @@ defmodule Tracy.Workers.Claude do
   end
 
   defp build_options(task, opts) do
-    allowed = Keyword.get(opts, :allowed_tools, @default_allowed_tools)
+    allowed = Keyword.get(opts, :allowed_tools, role_allowed_tools(task.role))
     max_turns = Keyword.get(opts, :max_turns, @default_max_turns)
     model = Keyword.get(opts, :model) || worker_model(task.role)
 
@@ -117,12 +129,7 @@ defmodule Tracy.Workers.Claude do
       output_format: :json,
       allowed_tools: allowed,
       permission_mode: :bypass_permissions,
-      append_system_prompt: """
-      You are a Tracy worker — role: #{task.role}. The boardroom has delegated
-      this task to you. Work autonomously. Don't ask clarifying questions
-      unless absolutely blocked; in that case, end with `## Needs Input`
-      and a one-line question.
-      """
+      append_system_prompt: role_system_prompt(task.role)
     }
   rescue
     _ ->
@@ -131,12 +138,117 @@ defmodule Tracy.Workers.Claude do
       %Options{model: worker_model(task.role), max_turns: @default_max_turns}
   end
 
+  @doc """
+  Tool allowlist for a role's default dispatch. Caller can override with
+  the `:allowed_tools` adapter opt; this is the "no opinion expressed"
+  fallback per role.
+
+  Designer drops `Edit` — the role produces *new artifacts*, not
+  modifications to existing code. Researcher / reviewer drop write
+  capability entirely so they can't accidentally mutate the repo.
+  """
+  @spec role_allowed_tools(String.t()) :: [String.t()]
+  def role_allowed_tools("designer"), do: @designer_tools
+  def role_allowed_tools("researcher"), do: @researcher_tools
+  def role_allowed_tools("reviewer"), do: @reviewer_tools
+  def role_allowed_tools("note_taker"), do: @note_taker_tools
+  def role_allowed_tools(_other), do: @default_allowed_tools
+
   # Per-role model defaults (locked in TRACY_CSUITE.md roster table).
   defp worker_model("engineer"), do: "sonnet"
   defp worker_model("designer"), do: "sonnet"
   defp worker_model("reviewer"), do: "sonnet"
   defp worker_model("operator"), do: "sonnet"
   defp worker_model(_other), do: "haiku"
+
+  @doc """
+  Role-specific system prompt appended after the SDK's built-in. Covers
+  base worker etiquette plus role-tailored guidance (e.g. designer's
+  artifact-output discipline + SVG→PNG conversion tips).
+  """
+  @spec role_system_prompt(String.t()) :: String.t()
+  def role_system_prompt(role) do
+    base = """
+    You are a Tracy worker — role: #{role}. The boardroom has delegated
+    this task to you. Work autonomously. Don't ask clarifying questions
+    unless absolutely blocked; in that case, end with `## Needs Input`
+    and a one-line question.
+    """
+
+    case role_specific_guidance(role) do
+      "" -> base
+      extra -> base <> "\n" <> extra
+    end
+  end
+
+  defp role_specific_guidance("designer") do
+    """
+    Your output is **artifacts**, not code modifications. Treat this like
+    a design studio handing finished files to engineering.
+
+    ### What to produce
+
+    - **Logos, icons, illustrations, infographics** → write SVG directly
+      with `Write`. SVG is the source of truth; PNG/JPEG are renders.
+    - **Marketing / UI mockups** → standalone HTML files with Tailwind via
+      CDN (`<script src="https://cdn.tailwindcss.com"></script>`) so they
+      render in any browser without a build step. daisyUI is fine too.
+    - **Design system specs** → markdown — color tokens, typography scale,
+      spacing, component states. The engineer reads this when implementing.
+    - **Copy / microcopy / brand voice** → markdown with section headers.
+
+    ### SVG → PNG / JPEG when you need raster
+
+    Default tool: `rsvg-convert` (librsvg).
+        rsvg-convert input.svg -o output.png -w 1024
+
+    Fallback if rsvg isn't installed: ImageMagick.
+        magick svg:input.svg output.png
+
+    For HTML mockup screenshots (only if Playwright is installed):
+        npx playwright screenshot --full-page mockup.html mockup.png
+
+    If neither rsvg-convert nor magick is on the system, just leave the SVG —
+    note it in `## Summary` so the engineer can convert. Don't waste turns
+    installing system packages.
+
+    ### Output organisation
+
+    Write outputs under `design/<short-task-slug>/`. Include a brief
+    `README.md` in that folder describing each file and how to view it
+    (open `index.html` in a browser, etc.).
+
+    List every file you produced in the `files touched:` line of `## Summary`
+    so Tracy's UI can surface them as Assets on the plan.
+
+    ### What you should NOT do
+
+    - Don't modify existing source files. You don't have `Edit` for a
+      reason — your job is producing new artifacts, not editing the app.
+    - Don't generate raster images from scratch (you can't). If the brief
+      asks for a photo, end with `## Needs Input` flagging that image
+      generation isn't in your toolset yet.
+    """
+  end
+
+  defp role_specific_guidance("researcher") do
+    """
+    You're a researcher — gather, synthesise, cite. Don't modify any files.
+    Lean on `WebSearch` + `WebFetch` for external sources and `Read` +
+    `Grep` for in-repo context. End with a structured summary the C-Suite
+    can act on.
+    """
+  end
+
+  defp role_specific_guidance("reviewer") do
+    """
+    You're a reviewer — read carefully and report. Don't modify files;
+    use `Read` + `Grep` to inspect, `WebFetch` to check external references.
+    Be specific: file:line citations beat generic praise or criticism.
+    """
+  end
+
+  defp role_specific_guidance(_other), do: ""
 
   # ---- report extraction ----
 

@@ -46,4 +46,57 @@ defmodule Tracy.Workers.ClaudeTest do
       assert Tracy.Workers.Adapter in behaviours
     end
   end
+
+  describe "role_allowed_tools/1" do
+    test "designer drops Edit but keeps Bash + Write" do
+      tools = Claude.role_allowed_tools("designer")
+      assert "Write" in tools
+      assert "Bash" in tools
+      refute "Edit" in tools
+    end
+
+    test "researcher + reviewer are read-only" do
+      for role <- ~w(researcher reviewer) do
+        tools = Claude.role_allowed_tools(role)
+        refute "Write" in tools
+        refute "Edit" in tools
+        refute "Bash" in tools
+        assert "Read" in tools
+      end
+    end
+
+    test "engineer (and unknown roles) get the full default surface" do
+      tools = Claude.role_allowed_tools("engineer")
+      assert "Edit" in tools
+      assert "Bash" in tools
+      assert "Write" in tools
+
+      assert Claude.role_allowed_tools("totally_made_up") ==
+               Claude.role_allowed_tools("engineer")
+    end
+  end
+
+  describe "role_system_prompt/1" do
+    test "designer prompt covers artifact discipline + SVG→PNG fallback chain" do
+      prompt = Claude.role_system_prompt("designer")
+      assert prompt =~ "artifacts"
+      assert prompt =~ "rsvg-convert"
+      assert prompt =~ "magick"
+      assert prompt =~ "design/<short-task-slug>/"
+      assert prompt =~ "don't have `Edit`"
+    end
+
+    test "non-designer roles get the base prompt without designer chatter" do
+      prompt = Claude.role_system_prompt("engineer")
+      refute prompt =~ "rsvg-convert"
+      assert prompt =~ "role: engineer"
+    end
+
+    test "every role is recognized (no FunctionClauseError)" do
+      for role <- Tracy.Plans.Task.roles() do
+        assert is_binary(Claude.role_system_prompt(role))
+        assert is_list(Claude.role_allowed_tools(role))
+      end
+    end
+  end
 end
