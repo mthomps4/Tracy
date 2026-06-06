@@ -176,6 +176,82 @@ defmodule Tracy.PlansTest do
     end
   end
 
+  describe "task chains — task_ready? / tasks_ready_after" do
+    setup do
+      {:ok, plan} = Plans.create_plan(%{title: "chain plan"})
+
+      {:ok, a} = Plans.create_task(%{plan_id: plan.id, title: "A", role: "designer"})
+
+      {:ok, b} =
+        Plans.create_task(%{
+          plan_id: plan.id,
+          title: "B (blocked by A)",
+          role: "engineer",
+          blocked_by: [a.id],
+          auto_dispatch: true
+        })
+
+      {:ok, c} =
+        Plans.create_task(%{
+          plan_id: plan.id,
+          title: "C (blocked by A + B)",
+          role: "reviewer",
+          blocked_by: [a.id, b.id]
+        })
+
+      %{plan: plan, a: a, b: b, c: c}
+    end
+
+    test "task_ready?/1 returns true for empty blocked_by", %{a: a} do
+      assert Plans.task_ready?(a)
+    end
+
+    test "task_ready?/1 returns false while any blocker is not done", %{b: b, c: c} do
+      refute Plans.task_ready?(b)
+      refute Plans.task_ready?(c)
+    end
+
+    test "task_ready?/1 returns true once all blockers are done", %{a: a, b: b, c: c} do
+      {:ok, _} = Plans.transition_task(a, "done")
+
+      # b's only blocker is now done
+      assert b |> Repo.reload!() |> Plans.task_ready?()
+      # c needs both a AND b
+      refute c |> Repo.reload!() |> Plans.task_ready?()
+
+      {:ok, b_done} = Plans.transition_task(b, "done")
+      _ = b_done
+
+      assert c |> Repo.reload!() |> Plans.task_ready?()
+    end
+
+    test "tasks_ready_after/1 returns only newly-ready downstream tasks", %{a: a, b: b, c: c} do
+      # Before A is done — nothing ready
+      assert Plans.tasks_ready_after(a.id) == []
+
+      {:ok, _} = Plans.transition_task(a, "done")
+
+      ready = Plans.tasks_ready_after(a.id)
+      ready_ids = Enum.map(ready, & &1.id)
+
+      # B is now ready (only A blocked it)
+      assert b.id in ready_ids
+      # C still blocked by B
+      refute c.id in ready_ids
+    end
+
+    test "tasks_ready_after/1 skips already-running or terminal tasks", %{a: a, b: b} do
+      {:ok, _} = Plans.transition_task(a, "done")
+      # If B is already in_progress, it shouldn't show up as "newly ready"
+      {:ok, _} = Plans.transition_task(b, "in_progress")
+
+      assert Plans.tasks_ready_after(a.id) == []
+    end
+
+    # NOTE for me later: Repo.reload!/1 is available via Tracy.DataCase's
+    # alias of the Repo. If not, use `Repo.get!(Task, task.id)`.
+  end
+
   describe "workspace_path/1" do
     setup do
       tmp_root = Path.join(System.tmp_dir!(), "tracy-workspace-test-#{System.unique_integer([:positive])}")

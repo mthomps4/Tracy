@@ -39,7 +39,7 @@ defmodule TracyWeb.PlanLive.Show do
           |> assign(:plan, plan)
           |> assign(:assets, Assets.list_asset_summaries(plan.id))
           |> assign(:show_transition_menu?, false)
-          |> assign(:new_task, %{title: "", role: "engineer"})
+          |> assign(:new_task, %{title: "", role: "engineer", blocked_by: nil, auto_dispatch: false})
           |> assign(:task_transition_id, nil)
           |> assign(:new_link, %{filename: "", body: ""})
           |> assign(:active_tab, "tasks")
@@ -87,11 +87,20 @@ defmodule TracyWeb.PlanLive.Show do
   end
 
   def handle_event("compose_task", %{"new_task" => params}, socket) do
-    {:noreply, assign(socket, :new_task, %{title: params["title"] || "", role: params["role"] || "engineer"})}
+    {:noreply,
+     assign(socket, :new_task, %{
+       title: params["title"] || "",
+       role: params["role"] || "engineer",
+       blocked_by: blank_to_nil(params["blocked_by"]),
+       auto_dispatch: params["auto_dispatch"] == "true"
+     })}
   end
 
-  def handle_event("create_task", %{"new_task" => %{"title" => title, "role" => role}}, socket) do
-    title = String.trim(title || "")
+  def handle_event("create_task", %{"new_task" => params}, socket) do
+    title = String.trim(params["title"] || "")
+    role = params["role"] || "engineer"
+    blocked_by = blank_to_nil(params["blocked_by"])
+    auto_dispatch = params["auto_dispatch"] == "true"
     plan = socket.assigns.plan
 
     if title == "" do
@@ -99,13 +108,22 @@ defmodule TracyWeb.PlanLive.Show do
     else
       next_pos = length(plan.tasks)
 
-      case Plans.create_task(%{plan_id: plan.id, title: title, role: role, position: next_pos}) do
+      attrs = %{
+        plan_id: plan.id,
+        title: title,
+        role: role,
+        position: next_pos,
+        blocked_by: if(blocked_by, do: [blocked_by], else: []),
+        auto_dispatch: auto_dispatch
+      }
+
+      case Plans.create_task(attrs) do
         {:ok, _task} ->
           Phoenix.PubSub.broadcast(Tracy.PubSub, "plans", :plans_changed)
 
           {:noreply,
            socket
-           |> assign(:new_task, %{title: "", role: role})
+           |> assign(:new_task, %{title: "", role: role, blocked_by: nil, auto_dispatch: false})
            |> reload_plan()}
 
         {:error, _cs} ->
@@ -315,11 +333,16 @@ defmodule TracyWeb.PlanLive.Show do
         <.task_filters_bar filters={@task_filters} plan={@plan} />
 
         <% visible = filter_tasks(@plan.tasks, @task_filters) %>
+        <% tasks_by_id = Enum.into(@plan.tasks, %{}, fn t -> {t.id, t} end) %>
 
         <section class="mb-4">
           <ul :if={visible != []} class="space-y-1.5">
             <li :for={task <- visible}>
-              <.task_row task={task} menu_open?={@task_transition_id == task.id} />
+              <.task_row
+                task={task}
+                menu_open?={@task_transition_id == task.id}
+                tasks_by_id={tasks_by_id}
+              />
             </li>
           </ul>
 
@@ -333,7 +356,7 @@ defmodule TracyWeb.PlanLive.Show do
           </p>
         </section>
 
-        <.new_task_form new_task={@new_task} />
+        <.new_task_form new_task={@new_task} existing_tasks={@plan.tasks} />
       </div>
     </Layouts.app>
     """
@@ -556,8 +579,20 @@ defmodule TracyWeb.PlanLive.Show do
 
   attr :task, :map, required: true
   attr :menu_open?, :boolean, required: true
+  attr :tasks_by_id, :map, default: %{}
 
   defp task_row(assigns) do
+    blockers =
+      (assigns.task.blocked_by || [])
+      |> Enum.map(&Map.get(assigns.tasks_by_id, &1))
+      |> Enum.reject(&is_nil/1)
+
+    blocked? = Enum.any?(blockers, &(&1.status != "done"))
+
+    assigns =
+      assigns
+      |> assign(:blockers, blockers)
+      |> assign(:blocked?, blocked?)
     ~H"""
     <div class={[
       "relative rounded-box border bg-base-100/60 p-3 sm:p-4",
@@ -597,10 +632,19 @@ defmodule TracyWeb.PlanLive.Show do
               {status_label(@task.status)}
             </span>
             <span :if={@task.duration_ms} class="tabular-nums">{format_duration(@task.duration_ms)}</span>
+            <span :if={@task.auto_dispatch} class="inline-flex items-center gap-0.5 rounded-full border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-primary/80">
+              <.icon name="hero-bolt-mini" class="size-2.5" /> auto
+            </span>
             <span :if={brief_preview(@task.brief)} class="hidden truncate normal-case tracking-normal text-base-content/40 sm:block">
               · {brief_preview(@task.brief)}
             </span>
           </div>
+
+          <p :if={@blockers != []} class="mt-1 text-[10px] text-base-content/50">
+            <span :if={@blocked?} class="text-warning">⏳ Blocked by</span>
+            <span :if={!@blocked?} class="text-success/70">✓ After</span>
+            <span :for={b <- @blockers} class="ml-1 italic">{String.slice(b.title, 0, 40)}</span>
+          </p>
 
           <div :if={@task.report} class="mt-2 rounded-field bg-base-200/40 px-2 py-1.5 text-xs text-base-content/70">
             <p class="font-medium text-base-content/80">{Map.get(@task.report, "summary", "")}</p>
@@ -614,8 +658,13 @@ defmodule TracyWeb.PlanLive.Show do
           :if={@task.status in ["backlog", "blocked"]}
           phx-click="dispatch_worker"
           phx-value-id={@task.id}
-          class="btn btn-primary btn-xs shrink-0"
-          title="Dispatch a worker for this task"
+          disabled={@blocked?}
+          class={[
+            "btn btn-xs shrink-0",
+            @blocked? && "btn-disabled btn-ghost",
+            !@blocked? && "btn-primary"
+          ]}
+          title={if @blocked?, do: "Blocked by upstream task(s) — dispatch the blocker first", else: "Dispatch a worker for this task"}
         >
           <.icon name="hero-paper-airplane-mini" class="size-3" />
           <span class="hidden sm:inline">Dispatch</span>
@@ -649,38 +698,73 @@ defmodule TracyWeb.PlanLive.Show do
   end
 
   attr :new_task, :map, required: true
+  attr :existing_tasks, :list, default: []
 
   defp new_task_form(assigns) do
     ~H"""
     <form
       phx-submit="create_task"
       phx-change="compose_task"
-      class="flex flex-col gap-2 sm:flex-row"
+      class="flex flex-col gap-2"
     >
-      <input
-        type="text"
-        name="new_task[title]"
-        value={@new_task.title}
-        placeholder="Add a task…"
-        class="input input-bordered flex-1 bg-base-200/60 text-sm"
-      />
+      <div class="flex flex-col gap-2 sm:flex-row">
+        <input
+          type="text"
+          name="new_task[title]"
+          value={@new_task.title}
+          placeholder="Add a task…"
+          class="input input-bordered flex-1 bg-base-200/60 text-sm"
+        />
 
-      <select
-        name="new_task[role]"
-        class="select select-bordered bg-base-200/60 text-sm sm:w-44"
-      >
-        <option :for={role <- Task.roles()} value={role} selected={role == @new_task.role}>
-          {role}
-        </option>
-      </select>
+        <select
+          name="new_task[role]"
+          class="select select-bordered bg-base-200/60 text-sm sm:w-44"
+        >
+          <option :for={role <- Task.roles()} value={role} selected={role == @new_task.role}>
+            {role}
+          </option>
+        </select>
 
-      <button
-        type="submit"
-        disabled={@new_task.title == ""}
-        class="btn btn-primary"
-      >
-        <.icon name="hero-plus-mini" class="size-4" /> Add
-      </button>
+        <button
+          type="submit"
+          disabled={@new_task.title == ""}
+          class="btn btn-primary"
+        >
+          <.icon name="hero-plus-mini" class="size-4" /> Add
+        </button>
+      </div>
+
+      <%!-- Chain controls: pick a blocker + auto-dispatch toggle. Only show
+            if there's at least one existing task to chain after. --%>
+      <div :if={@existing_tasks != []} class="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <select
+          name="new_task[blocked_by]"
+          class="select select-bordered select-sm bg-base-200/40 text-xs sm:w-72"
+          aria-label="Run after"
+        >
+          <option value="" selected={@new_task.blocked_by == nil}>
+            Run anytime (no dependency)
+          </option>
+          <option
+            :for={t <- @existing_tasks}
+            value={t.id}
+            selected={@new_task.blocked_by == t.id}
+          >
+            ⤷ After: {String.slice(t.title, 0, 60)}
+          </option>
+        </select>
+
+        <label class="flex items-center gap-2 text-[11px] text-base-content/70 sm:ml-2">
+          <input
+            type="checkbox"
+            name="new_task[auto_dispatch]"
+            value="true"
+            checked={@new_task.auto_dispatch}
+            class="checkbox checkbox-xs checkbox-primary"
+          />
+          Auto-dispatch when ready
+        </label>
+      </div>
     </form>
     """
   end
@@ -912,6 +996,10 @@ defmodule TracyWeb.PlanLive.Show do
   defp format_scope_value(v) when is_list(v), do: Enum.join(v, ", ")
   defp format_scope_value(v) when is_binary(v), do: v
   defp format_scope_value(v), do: inspect(v)
+
+  defp blank_to_nil(""), do: nil
+  defp blank_to_nil(nil), do: nil
+  defp blank_to_nil(val), do: val
 
   defp brief_preview(nil), do: nil
   defp brief_preview(""), do: nil

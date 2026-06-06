@@ -37,6 +37,12 @@ defmodule Tracy.Plans.Task do
     field :report, :map
     field :metadata, :map, default: %{}
 
+    # Chain wiring. blocked_by: UUIDs of tasks that must be "done" before
+    # this one is ready. auto_dispatch: when ready, fire automatically
+    # vs wait for an explicit user click.
+    field :blocked_by, {:array, :binary_id}, default: []
+    field :auto_dispatch, :boolean, default: false
+
     belongs_to :plan, Plan
     belongs_to :agent_run, AgentRun
 
@@ -45,7 +51,7 @@ defmodule Tracy.Plans.Task do
 
   @required ~w(plan_id title role status)a
   @optional ~w(brief position assigned_at completed_at duration_ms cost_micros
-               report metadata agent_run_id)a
+               report metadata agent_run_id blocked_by auto_dispatch)a
 
   def changeset(task \\ %__MODULE__{}, attrs) do
     task

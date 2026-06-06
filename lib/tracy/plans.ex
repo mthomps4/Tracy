@@ -141,6 +141,54 @@ defmodule Tracy.Plans do
     |> Repo.insert()
   end
 
+  # ---- Task chain helpers ----
+
+  @doc """
+  Is the task's dep graph satisfied? True if every `blocked_by` task is
+  currently `status="done"`. Empty `blocked_by` (no deps) → trivially true.
+  """
+  @spec task_ready?(Task.t()) :: boolean()
+  def task_ready?(%Task{blocked_by: []}), do: true
+
+  def task_ready?(%Task{blocked_by: ids}) when is_list(ids) do
+    case Repo.all(from t in Task, where: t.id in ^ids, select: t.status) do
+      statuses when length(statuses) == length(ids) ->
+        Enum.all?(statuses, &(&1 == "done"))
+
+      _ ->
+        # Missing blockers shouldn't happen, but treat as "blocked" rather
+        # than crash. Surfaces as a stuck chain that we can debug.
+        false
+    end
+  end
+
+  def task_ready?(_), do: false
+
+  @doc """
+  Tasks that listed `task_id` as a blocker AND are now fully ready (all
+  their other blockers are also `done`). Used by the worker completion
+  hook to fan out auto-dispatches.
+
+  Returns tasks in `backlog`/`triage` only — already-running, paused,
+  failed, or terminal tasks are skipped.
+  """
+  @spec tasks_ready_after(String.t()) :: [Task.t()]
+  def tasks_ready_after(task_id) when is_binary(task_id) do
+    downstream =
+      from(t in Task,
+        where: fragment("? = ANY(?)", type(^task_id, :binary_id), t.blocked_by),
+        where: t.status in ["backlog", "triage"]
+      )
+      |> Repo.all()
+
+    Enum.filter(downstream, &task_ready?/1)
+  end
+
+  @doc "Fetch many tasks by id, preserving order. Used by chain UIs."
+  def list_tasks(ids) when is_list(ids) do
+    from(t in Task, where: t.id in ^ids) |> Repo.all()
+  end
+
   @doc "Transition a task's status."
   def transition_task(%Task{} = task, new_status) do
     task

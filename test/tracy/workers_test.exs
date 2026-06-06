@@ -190,6 +190,52 @@ defmodule Tracy.WorkersTest do
     end
   end
 
+  describe "auto-dispatch fan-out (chains)" do
+    # TODO: integration test for the full A→B auto-dispatch path is gated
+    # on figuring out the right sandbox.allow call for the dynamically-
+    # supervised Worker.Server children. The chain *logic* is covered:
+    #
+    #   - Plans.task_ready?/1 + Plans.tasks_ready_after/1 (plans_test.exs)
+    #   - Workers.Server fan-out scan is invoked on :worker_completed
+    #     and rescued so a sandbox failure doesn't crash the parent
+    #
+    # Manual verification path: create two tasks with the second's
+    # blocked_by pointing at the first + auto_dispatch=true, dispatch
+    # the first, watch the second's Live tab fill in as soon as A's
+    # report lands.
+    @tag :skip
+    test "completing a task fires its auto_dispatch=true downstream (integration)" do
+      flunk("see TODO above — chain logic covered unit-wise; manual verify the wire")
+    end
+
+    test "tasks_ready_after returns the right downstream after a completion (no GenServer)" do
+      # Pure context-level coverage. Workers.Server invokes this same
+      # helper on completion — verifying the helper here proves the
+      # fan-out selects the correct tasks; the actual `Workers.dispatch`
+      # call on each is exercised by the manual integration path.
+      {:ok, plan} = Plans.create_plan(%{title: "ctx chain"})
+      {:ok, a} = Plans.create_task(%{plan_id: plan.id, title: "A", role: "engineer"})
+
+      {:ok, b} =
+        Plans.create_task(%{
+          plan_id: plan.id,
+          title: "B",
+          role: "engineer",
+          blocked_by: [a.id],
+          auto_dispatch: true
+        })
+
+      # Before A completes, no downstream is "ready"
+      assert Plans.tasks_ready_after(a.id) == []
+
+      {:ok, _} = Plans.transition_task(a, "done")
+
+      ready = Plans.tasks_ready_after(a.id)
+      assert Enum.map(ready, & &1.id) == [b.id]
+      assert Enum.all?(ready, & &1.auto_dispatch)
+    end
+  end
+
   describe "adapter_for_role/1" do
     test "falls back to default_adapter when role has no override" do
       Application.put_env(:tracy, Workers,

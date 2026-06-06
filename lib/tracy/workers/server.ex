@@ -201,6 +201,11 @@ defmodule Tracy.Workers.Server do
           broadcast(state.task_id, {:worker_spawned_tasks, new_tasks})
         end
 
+        # Fan out auto-dispatches to newly-ready downstream tasks. Do this
+        # AFTER broadcasting completion so the UI shows the chain progression
+        # in the right order.
+        fan_out_auto_dispatches(completed.id)
+
         broadcast_plans()
 
         %{state | task: completed, status: :completed, report: report}
@@ -208,6 +213,41 @@ defmodule Tracy.Workers.Server do
       {:error, _cs} ->
         fail(state, :complete_failed)
     end
+  end
+
+  # Find tasks whose blocked_by just cleared (this task was their last
+  # outstanding blocker) and that opted into auto_dispatch. Fire each
+  # via Workers.dispatch — they spawn their own Server processes under
+  # the same supervisor, independent of this one.
+  #
+  # Wrapped in try/rescue so a DB error here (e.g. sandbox shutdown in
+  # tests, or a transient connection issue in prod) doesn't crash the
+  # completing worker — its report is already persisted and broadcast.
+  defp fan_out_auto_dispatches(completed_task_id) do
+    Plans.tasks_ready_after(completed_task_id)
+    |> Enum.filter(& &1.auto_dispatch)
+    |> Enum.each(fn task ->
+      case Tracy.Workers.dispatch(task) do
+        {:ok, _pid} ->
+          broadcast(completed_task_id, {:worker_chain_dispatched, task})
+
+        {:error, reason} ->
+          require Logger
+
+          Logger.warning(
+            "Tracy.Workers.Server: auto-dispatch failed for chained task #{task.id} — #{inspect(reason)}"
+          )
+      end
+    end)
+  rescue
+    exception ->
+      require Logger
+
+      Logger.warning(
+        "Tracy.Workers.Server: fan-out scan crashed for #{completed_task_id} — #{Exception.message(exception)}"
+      )
+
+      :ok
   end
 
   defp insert_spawned_tasks(_plan_id, [], _start_position), do: []
