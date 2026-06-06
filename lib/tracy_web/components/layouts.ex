@@ -120,24 +120,24 @@ defmodule TracyWeb.Layouts do
         </p>
 
         <.sidebar_nav_item
-          tab={:plans}
-          label="Plans"
-          icon="hero-rectangle-stack-solid"
-          href="/plans"
-          current_tab={@current_tab}
-        />
-        <.sidebar_nav_item
-          tab={:active}
-          label="Active"
-          icon="hero-bolt-solid"
-          href="/active"
-          current_tab={@current_tab}
-        />
-        <.sidebar_nav_item
           tab={:chat}
           label="Chat"
           icon="hero-chat-bubble-left-solid"
           href="/boardroom"
+          current_tab={@current_tab}
+        />
+        <.sidebar_nav_item
+          tab={:projects}
+          label="Projects"
+          icon="hero-rectangle-stack-solid"
+          href="/projects"
+          current_tab={@current_tab}
+        />
+        <.sidebar_nav_item
+          tab={:plans}
+          label="Plans"
+          icon="hero-clipboard-document-list-solid"
+          href="/plans"
           current_tab={@current_tab}
         />
         <.sidebar_nav_item
@@ -290,24 +290,17 @@ defmodule TracyWeb.Layouts do
       role="tablist"
     >
       <.tab_bar_item
-        tab={:plans}
-        label="Plans"
-        icon="hero-rectangle-stack-solid"
-        href="/plans"
-        current_tab={@current_tab}
-      />
-      <.tab_bar_item
-        tab={:active}
-        label="Active"
-        icon="hero-bolt-solid"
-        href="/active"
-        current_tab={@current_tab}
-      />
-      <.tab_bar_item
         tab={:chat}
         label="Chat"
         icon="hero-chat-bubble-left-solid"
         href="/boardroom"
+        current_tab={@current_tab}
+      />
+      <.tab_bar_item
+        tab={:projects}
+        label="Projects"
+        icon="hero-rectangle-stack-solid"
+        href="/projects"
         current_tab={@current_tab}
       />
       <.tab_bar_item
