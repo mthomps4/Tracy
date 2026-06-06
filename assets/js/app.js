@@ -25,6 +25,26 @@ import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/tracy"
 import topbar from "../vendor/topbar"
 
+// ---- Master/detail navigation hooks -------------------------------------
+import {ScrollRestore} from "./hooks/scroll_restore"
+import {DetailFade} from "./hooks/detail_fade"
+
+// ---- Loading hooks -------------------------------------------------------
+//
+// PageLoading — full-viewport overlay during initial session bootstrap.
+// Mount on: <div id="page-loading" class="page-loading" phx-hook="PageLoading">
+//
+// Shows after a 300 ms delay (prevents flash on fast connections).
+// Remove the element from the DOM (or set hidden) to dismiss.
+const PageLoading = {
+  mounted() {
+    this._timer = setTimeout(() => this.el.classList.add("visible"), 300)
+  },
+  destroyed() {
+    clearTimeout(this._timer)
+  }
+}
+
 // ---- Boardroom hooks -----------------------------------------------------
 const ScrollToBottom = {
   mounted() {
@@ -59,11 +79,160 @@ window.addEventListener("tracy:submit-on-enter", (e) => {
   }
 })
 
+// ---- ChatDock — sticky JARVIS-style chat surface ------------------------
+//
+// Global keybindings, focus management, bottom-sheet drag (mobile),
+// click-outside-to-close. Mounts on the chat-dock-root container.
+const ChatDock = {
+  mounted() {
+    this._onKey = (e) => {
+      // Cmd+J / Ctrl+J — toggle open
+      if ((e.metaKey || e.ctrlKey) && (e.key === "j" || e.key === "J")) {
+        e.preventDefault()
+        this.pushEvent("toggle")
+        // After server flips open, focus the input
+        setTimeout(() => {
+          const ta = document.getElementById("chat-dock-input")
+          ta && ta.focus()
+        }, 30)
+        return
+      }
+      // Esc — close when open
+      if (e.key === "Escape" && this.el.dataset.open === "true") {
+        e.preventDefault()
+        this.pushEvent("close")
+      }
+    }
+    document.addEventListener("keydown", this._onKey)
+
+    this._onClickOutside = (e) => {
+      if (this.el.dataset.open !== "true") return
+      if (this.el.contains(e.target)) return
+      // Don't close while focused on textarea (mobile keyboard pop)
+      const active = document.activeElement
+      if (active && this.el.contains(active)) return
+      this.pushEvent("close")
+    }
+    document.addEventListener("pointerdown", this._onClickOutside)
+
+    // Bottom-sheet drag (mobile) — drag the header handle to snap between
+    // peek / half / full.
+    this._setupDrag()
+  },
+
+  destroyed() {
+    document.removeEventListener("keydown", this._onKey)
+    document.removeEventListener("pointerdown", this._onClickOutside)
+  },
+
+  _setupDrag() {
+    const header = this.el.querySelector(".chat-dock__header")
+    if (!header) {
+      // header doesn't exist until open — listen for first appearance
+      this._mo = new MutationObserver(() => this._setupDrag())
+      this._mo.observe(this.el, {childList: true, subtree: true})
+      return
+    }
+    this._mo && this._mo.disconnect()
+    let startY = null
+    let startSnap = this.el.dataset.snap
+    header.addEventListener("touchstart", (e) => {
+      startY = e.touches[0].clientY
+      startSnap = this.el.dataset.snap
+    }, {passive: true})
+    header.addEventListener("touchmove", (e) => {
+      if (startY == null) return
+      const dy = e.touches[0].clientY - startY
+      // Visual: just rely on snap states for now; advanced drag-resize later.
+      if (Math.abs(dy) > 50) {
+        const target = dy > 0
+          ? (startSnap === "full" ? "half" : "peek")
+          : (startSnap === "peek" ? "half" : "full")
+        if (target !== startSnap) {
+          this.pushEvent("snap", {to: target})
+          startSnap = target
+          startY = e.touches[0].clientY
+        }
+      }
+    }, {passive: true})
+    header.addEventListener("touchend", () => { startY = null }, {passive: true})
+  }
+}
+
+// ---- VoiceInput — browser SpeechRecognition wrapper ---------------------
+//
+// Tap the mic button → start listening. Interim transcripts stream into
+// the composer; final result pushes voice:transcript with final=true,
+// which the LiveView auto-submits.
+//
+// Browser support: Chrome / Safari (with webkit prefix) / Edge. Falls
+// back gracefully on Firefox with an alert.
+const VoiceInput = {
+  mounted() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SR) {
+      this.el.classList.add("chat-dock__mic--unsupported")
+      this.el.title = "Voice input unsupported in this browser — try Safari or Chrome"
+      this.el.addEventListener("click", () => {
+        alert("Voice input needs SpeechRecognition API — try Safari (iOS/macOS), Chrome, or Edge.")
+      })
+      return
+    }
+
+    this._rec = new SR()
+    this._rec.continuous = false
+    this._rec.interimResults = true
+    this._rec.lang = "en-US"
+
+    this._rec.onresult = (evt) => {
+      let text = ""
+      let isFinal = false
+      for (let i = evt.resultIndex; i < evt.results.length; i++) {
+        text += evt.results[i][0].transcript
+        if (evt.results[i].isFinal) isFinal = true
+      }
+      this.pushEventTo("#chat-dock-root", "voice:transcript", {text, final: isFinal})
+    }
+
+    this._rec.onstart = () => {
+      this.pushEventTo("#chat-dock-root", "voice:start", {})
+    }
+
+    this._rec.onend = () => {
+      this.pushEventTo("#chat-dock-root", "voice:stop", {})
+    }
+
+    this._rec.onerror = (evt) => {
+      console.warn("SpeechRecognition error:", evt.error)
+      this.pushEventTo("#chat-dock-root", "voice:stop", {})
+    }
+
+    this.el.addEventListener("click", () => {
+      const listening = this.el.dataset.listening === "true"
+      try {
+        if (listening) {
+          this._rec.stop()
+        } else {
+          this._rec.start()
+        }
+      } catch (err) {
+        console.warn("voice toggle:", err)
+      }
+    })
+  },
+
+  destroyed() {
+    if (this._rec) {
+      try { this._rec.stop() } catch (_) {}
+    }
+  }
+}
+
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, ScrollToBottom, GrowComposer},
+  hooks: {...colocatedHooks, PageLoading, ScrollToBottom, GrowComposer, ScrollRestore, DetailFade, ChatDock, VoiceInput},
 })
 
 // Show progress bar on live navigation and form submits
