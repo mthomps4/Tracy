@@ -125,6 +125,7 @@ defmodule Tracy.Session.Server do
         }
 
         record_episode(:assistant, response.message.content, final_state.current_project, state.id)
+        fire_extractor(final_state)
         broadcast(state.id, {:done, response})
         {:reply, {:ok, response}, final_state, @idle_timeout}
 
@@ -193,6 +194,8 @@ defmodule Tracy.Session.Server do
     }
 
     record_episode(:assistant, response.message.content, final_state.current_project, state.id)
+    fire_extractor(final_state)
+
     {:noreply, final_state, @idle_timeout}
   end
 
@@ -208,6 +211,46 @@ defmodule Tracy.Session.Server do
   # ---- helpers ----
 
   defp broadcast(id, event), do: PubSub.broadcast(Tracy.PubSub, topic(id), {:session_event, id, event})
+
+  # Fire-and-forget pass over recent messages — extracts candidate Facts
+  # via Tracy.Memory.Extractor (heuristic provider by default). The Task
+  # is unlinked from this Server so a crashing extractor doesn't bring
+  # the conversation down. If extraction is disabled, skip.
+  defp fire_extractor(state) do
+    if extractor_enabled?() do
+      messages = state.messages
+      project = state.current_project
+      id = state.id
+
+      Task.start(fn ->
+        case Tracy.Memory.Extractor.extract(messages, project: project) do
+          {:ok, []} ->
+            :ok
+
+          {:ok, facts} ->
+            require Logger
+            Logger.info("Tracy.Memory.Extractor: learned #{length(facts)} fact(s) from session #{id}")
+
+            # Broadcast a tiny notification so the dock can show what
+            # was learned, if it wants to.
+            Enum.each(facts, fn fact ->
+              PubSub.broadcast(
+                Tracy.PubSub,
+                "chat:notifications",
+                {:fact_learned, fact}
+              )
+            end)
+
+          _ ->
+            :ok
+        end
+      end)
+    end
+  end
+
+  defp extractor_enabled? do
+    Application.get_env(:tracy, :extract_facts_inline, true)
+  end
 
   defp record_episode(role, content, project, session_id) do
     Memory.record_episode(%{

@@ -438,6 +438,12 @@ defmodule TracyWeb.ChatDockLive do
     )
   end
 
+  # Inline learning notice — extractor caught a durable claim and stashed
+  # it. Quiet system bubble; doesn't interrupt the conversation flow.
+  def handle_info({:fact_learned, fact}, socket) do
+    push_system("🧠 Noted: #{fact.statement}", socket)
+  end
+
   # Poll the embedder warm status until it flips to true, then stop
   # polling. Used for the subtle "still warming" indicator in the dock
   # header.
