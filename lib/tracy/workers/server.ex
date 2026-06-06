@@ -198,6 +198,15 @@ defmodule Tracy.Workers.Server do
 
         broadcast(state.task_id, {:worker_completed, completed, report})
 
+        # Global chat notification — the ChatDock subscribes to this so
+        # Matt sees a system bubble when a backgrounded worker finishes,
+        # no matter which page he's on or which task he was watching.
+        Phoenix.PubSub.broadcast(
+          Tracy.PubSub,
+          "chat:notifications",
+          {:worker_completed_notice, completed, report}
+        )
+
         if new_tasks != [] do
           broadcast(state.task_id, {:worker_spawned_tasks, new_tasks})
         end
@@ -396,6 +405,13 @@ defmodule Tracy.Workers.Server do
     {:ok, failed} = Plans.mark_task_failed(state.task, reason)
 
     broadcast(state.task_id, {:worker_failed, failed, reason})
+
+    Phoenix.PubSub.broadcast(
+      Tracy.PubSub,
+      "chat:notifications",
+      {:worker_failed_notice, failed, reason}
+    )
+
     broadcast_plans()
 
     %{state | task: failed, status: :failed, error: reason}

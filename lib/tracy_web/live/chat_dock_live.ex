@@ -43,6 +43,7 @@ defmodule TracyWeb.ChatDockLive do
     if connected?(socket) do
       :ok = Session.subscribe(session_id)
       Phoenix.PubSub.subscribe(Tracy.PubSub, "chat:context:#{user_id}")
+      Phoenix.PubSub.subscribe(Tracy.PubSub, "chat:notifications")
     end
 
     messages =
@@ -115,14 +116,155 @@ defmodule TracyWeb.ChatDockLive do
   def handle_event("send", %{"composer" => text}, socket) when byte_size(text) > 0 do
     text = String.trim(text)
 
-    if text == "" do
-      {:noreply, socket}
-    else
-      dispatch_message(text, socket)
+    cond do
+      text == "" ->
+        {:noreply, socket}
+
+      String.starts_with?(text, "/") ->
+        handle_slash_command(text, socket)
+
+      true ->
+        dispatch_message(text, socket)
     end
   end
 
   def handle_event("send", _, socket), do: {:noreply, socket}
+
+  # ---- slash commands ----
+
+  defp handle_slash_command(text, socket) do
+    case parse_command(text) do
+      {:pin, name} -> cmd_pin(name, socket)
+      {:switch, name} -> cmd_pin(name, socket)
+      :unpin -> cmd_unpin(socket)
+      :memo -> cmd_memo(socket)
+      :help -> cmd_help(socket)
+      {:unknown, name} -> push_system("Unknown command `#{name}`. Try `/help`.", socket)
+    end
+  end
+
+  defp parse_command(text) do
+    case String.split(text, " ", parts: 2) do
+      ["/pin"] -> :unpin
+      ["/pin", rest] -> {:pin, String.trim(rest)}
+      ["/switch", rest] -> {:switch, String.trim(rest)}
+      ["/switch"] -> {:unknown, "switch (needs a project name)"}
+      ["/unpin"] -> :unpin
+      ["/memo"] -> :memo
+      ["/memo", _] -> :memo
+      ["/help"] -> :help
+      ["/help", _] -> :help
+      ["/" <> name | _] -> {:unknown, name}
+    end
+  end
+
+  defp cmd_pin("", socket), do: cmd_unpin(socket)
+
+  defp cmd_pin(name, socket) do
+    Phoenix.PubSub.broadcast(
+      Tracy.PubSub,
+      "chat:context:#{socket.assigns.user_id}",
+      {:context, %{project: name}}
+    )
+
+    socket
+    |> assign(:pinned_project, name)
+    |> assign(:composer, "")
+    |> push_system("Pinned project: **#{name}**. Subsequent messages route to this context until you `/unpin` or `/switch <other>`.")
+  end
+
+  defp cmd_unpin(socket) do
+    Phoenix.PubSub.broadcast(
+      Tracy.PubSub,
+      "chat:context:#{socket.assigns.user_id}",
+      {:context, %{project: nil}}
+    )
+
+    socket
+    |> assign(:pinned_project, nil)
+    |> assign(:composer, "")
+    |> push_system("Unpinned. I'll route context implicitly from your messages now.")
+  end
+
+  defp cmd_memo(socket) do
+    messages =
+      socket.assigns.session_id
+      |> Tracy.Session.messages()
+      |> Enum.take(-10)
+
+    summary = build_memo(messages, socket.assigns.pinned_project)
+
+    socket
+    |> assign(:composer, "")
+    |> push_system(summary)
+  end
+
+  defp cmd_help(socket) do
+    socket
+    |> assign(:composer, "")
+    |> push_system("""
+    Slash commands:
+
+    `/pin <project>`     Pin a project context — subsequent messages
+                         route there. The pin shows in the dock header.
+    `/switch <project>`  Alias for `/pin`.
+    `/unpin`             Drop the pin, route implicitly again.
+    `/memo`              Show a quick recap of the recent conversation.
+    `/help`              This list.
+    """)
+  end
+
+  defp build_memo([], _project), do: "No conversation yet to recap."
+
+  defp build_memo(messages, project) do
+    header =
+      case project do
+        nil -> "Recent recap (last #{length(messages)} turns):"
+        name -> "Recent recap — pinned to **#{name}** (last #{length(messages)} turns):"
+      end
+
+    lines =
+      messages
+      |> Enum.map(fn
+        %Tracy.LLM.Message{role: :user, content: c} -> "👤 #{first_line(c)}"
+        %Tracy.LLM.Message{role: :assistant, content: c} -> "🧠 #{first_line(c)}"
+        %Tracy.LLM.Message{role: :system, content: c} -> "ℹ️  #{first_line(c)}"
+        _ -> nil
+      end)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join("\n")
+
+    "#{header}\n\n#{lines}"
+  end
+
+  defp first_line(text) do
+    text
+    |> String.split("\n", parts: 2)
+    |> List.first()
+    |> String.slice(0, 140)
+  end
+
+  defp push_system(content, socket) when is_binary(content) do
+    push_system(socket, content)
+  end
+
+  defp push_system(socket, content) do
+    idx = socket.assigns.next_index
+
+    view = %{
+      index: idx,
+      role: :system,
+      content: content,
+      streaming?: false
+    }
+
+    {:noreply,
+     socket
+     |> stream_insert(:messages, view, dom_id: "dock-msg-#{idx}")
+     |> assign(:next_index, idx + 1)
+     |> assign(:open?, true)
+     |> assign(:snap, "half")}
+  end
 
   defp dispatch_message(text, socket) do
     user_idx = socket.assigns.next_index
@@ -215,6 +357,32 @@ defmodule TracyWeb.ChatDockLive do
   # Context updates from page LiveViews — "you're now looking at project X"
   def handle_info({:context, ctx}, socket) when is_map(ctx) do
     {:noreply, assign(socket, :pinned_project, Map.get(ctx, :project))}
+  end
+
+  # Worker completion notice — drop a system bubble so Matt sees that
+  # backgrounded work just landed without having to navigate to the
+  # task's Live tab.
+  def handle_info({:worker_completed_notice, task, report}, socket) do
+    summary = Map.get(report, :summary, "Worker finished.")
+    files = Map.get(report, :files_changed, [])
+
+    files_line =
+      case files do
+        [] -> ""
+        list -> "\n📂 " <> Enum.join(list, ", ")
+      end
+
+    push_system(
+      "🔧 #{String.capitalize(task.role)} done — #{task.title}\n\n#{summary}#{files_line}",
+      socket
+    )
+  end
+
+  def handle_info({:worker_failed_notice, task, reason}, socket) do
+    push_system(
+      "⚠️  #{String.capitalize(task.role)} **failed** — #{task.title}\n\n#{inspect(reason, limit: 200)}",
+      socket
+    )
   end
 
   def handle_info(_, socket), do: {:noreply, socket}
