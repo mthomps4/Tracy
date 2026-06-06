@@ -217,10 +217,61 @@ defmodule Tracy.Plans do
   end
 
   @doc """
-  Mark a task as blocked with a failure reason recorded in metadata.
-  Used by `Tracy.Workers.Server` when an adapter raises or returns
-  `{:error, _}`.
+  Mark a task `failed` with the failure reason in metadata. Used by
+  `Tracy.Workers.Server` when an adapter raises or returns `{:error, _}`.
+
+  Distinct from `blocked` (which means "worker hit ## Needs Input —
+  human attention required") and `paused` (which means "budget gate
+  fired before the worker even started"). All three are recoverable
+  by redispatching the task.
   """
+  def mark_task_failed(%Task{} = task, reason) do
+    metadata =
+      Map.merge(task.metadata || %{}, %{
+        "last_failure" => %{
+          "reason" => inspect(reason, limit: 500),
+          "at" => DateTime.utc_now() |> DateTime.to_iso8601()
+        }
+      })
+
+    task
+    |> Task.changeset(%{metadata: metadata})
+    |> Repo.update()
+    |> case do
+      {:ok, updated} -> transition_task(updated, "failed")
+      err -> err
+    end
+  end
+
+  @doc """
+  Mark a task `paused` because the SDK pool budget gate fired before
+  dispatch. The current cost-meter state is recorded in metadata so
+  the UI can show *why* it paused and the user can decide whether to
+  force-redispatch.
+  """
+  def mark_task_paused(%Task{} = task, budget_state, opts \\ []) do
+    initiated_by = Keyword.get(opts, :initiated_by, :auto)
+
+    metadata =
+      Map.merge(task.metadata || %{}, %{
+        "budget_state" => %{
+          "pct" => Map.get(budget_state, :pct),
+          "zone" => Map.get(budget_state, :zone) |> to_string(),
+          "initiated_by" => to_string(initiated_by),
+          "at" => DateTime.utc_now() |> DateTime.to_iso8601()
+        }
+      })
+
+    task
+    |> Task.changeset(%{metadata: metadata})
+    |> Repo.update()
+    |> case do
+      {:ok, updated} -> transition_task(updated, "paused")
+      err -> err
+    end
+  end
+
+  @deprecated "Use mark_task_failed/2 — kept for back-compat through the chain rollout"
   def update_plan_task_with_failure(%Task{} = task, reason) do
     metadata =
       Map.merge(task.metadata || %{}, %{
@@ -234,7 +285,7 @@ defmodule Tracy.Plans do
     |> Task.changeset(%{metadata: metadata})
     |> Repo.update()
     |> case do
-      {:ok, updated} -> transition_task(updated, "blocked")
+      {:ok, updated} -> transition_task(updated, "failed")
       err -> err
     end
   end

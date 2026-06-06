@@ -227,9 +227,14 @@ defmodule Tracy.Workers.Server do
     Plans.tasks_ready_after(completed_task_id)
     |> Enum.filter(& &1.auto_dispatch)
     |> Enum.each(fn task ->
-      case Tracy.Workers.dispatch(task) do
+      case Tracy.Workers.dispatch(task, initiated_by: :auto) do
         {:ok, _pid} ->
           broadcast(completed_task_id, {:worker_chain_dispatched, task})
+
+        {:error, {:budget_paused, budget_state}} ->
+          # Chain stopped at the budget gate. Downstream stays blocked_by
+          # this paused task — exactly the failure-breaks-chain semantics.
+          broadcast(completed_task_id, {:worker_chain_paused, task, budget_state})
 
         {:error, reason} ->
           require Logger
@@ -245,6 +250,17 @@ defmodule Tracy.Workers.Server do
 
       Logger.warning(
         "Tracy.Workers.Server: fan-out scan crashed for #{completed_task_id} — #{Exception.message(exception)}"
+      )
+
+      :ok
+  catch
+    kind, value ->
+      # DB sandbox EXITs in tests, or any other non-Exception flavor of
+      # crash, also lands here. The worker's report is already broadcast.
+      require Logger
+
+      Logger.warning(
+        "Tracy.Workers.Server: fan-out scan exited for #{completed_task_id} — #{inspect({kind, value}, limit: 200)}"
       )
 
       :ok
@@ -295,12 +311,12 @@ defmodule Tracy.Workers.Server do
   end
 
   defp fail(state, reason) do
-    {:ok, blocked} = Plans.update_plan_task_with_failure(state.task, reason)
+    {:ok, failed} = Plans.mark_task_failed(state.task, reason)
 
-    broadcast(state.task_id, {:worker_failed, blocked, reason})
+    broadcast(state.task_id, {:worker_failed, failed, reason})
     broadcast_plans()
 
-    %{state | task: blocked, status: :failed, error: reason}
+    %{state | task: failed, status: :failed, error: reason}
   end
 
   defp broadcast(task_id, event) do

@@ -434,7 +434,7 @@ defmodule TracyWeb.PlanLive.Show do
         />
         <div class="mx-1 h-4 w-px bg-base-300/60"></div>
         <.filter_chip
-          :for={status <- ["backlog", "in_progress", "in_review", "needs_input", "blocked", "done"]}
+          :for={status <- ["backlog", "in_progress", "in_review", "needs_input", "blocked", "failed", "paused", "done"]}
           label={status_label(status)}
           value={status}
           current={@filters.status}
@@ -655,19 +655,20 @@ defmodule TracyWeb.PlanLive.Show do
         </.link>
 
         <button
-          :if={@task.status in ["backlog", "blocked"]}
+          :if={@task.status in ["backlog", "blocked", "failed", "paused"]}
           phx-click="dispatch_worker"
           phx-value-id={@task.id}
           disabled={@blocked?}
           class={[
             "btn btn-xs shrink-0",
             @blocked? && "btn-disabled btn-ghost",
-            !@blocked? && "btn-primary"
+            !@blocked? && @task.status in ["failed", "paused"] && "btn-warning",
+            !@blocked? && @task.status not in ["failed", "paused"] && "btn-primary"
           ]}
-          title={if @blocked?, do: "Blocked by upstream task(s) — dispatch the blocker first", else: "Dispatch a worker for this task"}
+          title={dispatch_button_title(@task.status, @blocked?)}
         >
           <.icon name="hero-paper-airplane-mini" class="size-3" />
-          <span class="hidden sm:inline">Dispatch</span>
+          <span class="hidden sm:inline">{if @task.status in ["failed", "paused"], do: "Retry", else: "Dispatch"}</span>
         </button>
 
         <span :if={@task.status == "in_progress"} class="inline-flex shrink-0 items-center gap-1 text-[10px] uppercase tracking-wider text-primary">
@@ -965,6 +966,8 @@ defmodule TracyWeb.PlanLive.Show do
   defp status_label("in_review"), do: "In Review"
   defp status_label("needs_input"), do: "Needs Input"
   defp status_label("blocked"), do: "Blocked"
+  defp status_label("failed"), do: "Failed"
+  defp status_label("paused"), do: "Paused"
   defp status_label("done"), do: "Done"
   defp status_label("canceled"), do: "Canceled"
   defp status_label(other), do: String.capitalize(other)
@@ -975,6 +978,8 @@ defmodule TracyWeb.PlanLive.Show do
   defp status_dot("in_review"), do: "bg-secondary"
   defp status_dot("needs_input"), do: "bg-warning"
   defp status_dot("blocked"), do: "bg-error"
+  defp status_dot("failed"), do: "bg-error"
+  defp status_dot("paused"), do: "bg-warning"
   defp status_dot("done"), do: "bg-success"
   defp status_dot("canceled"), do: "bg-base-content/20"
   defp status_dot(_), do: "bg-base-content/30"
@@ -985,6 +990,8 @@ defmodule TracyWeb.PlanLive.Show do
   defp status_pill_class("in_review"), do: "border-secondary/40 bg-secondary/10 text-secondary"
   defp status_pill_class("needs_input"), do: "border-warning/40 bg-warning/10 text-warning"
   defp status_pill_class("blocked"), do: "border-error/40 bg-error/10 text-error"
+  defp status_pill_class("failed"), do: "border-error/40 bg-error/10 text-error"
+  defp status_pill_class("paused"), do: "border-warning/40 bg-warning/10 text-warning"
   defp status_pill_class("done"), do: "border-success/40 bg-success/10 text-success"
   defp status_pill_class("canceled"), do: "border-base-300/60 bg-base-200/40 text-base-content/40"
   defp status_pill_class(_), do: "border-base-300/60 bg-base-200/60 text-base-content/70"
@@ -1000,6 +1007,13 @@ defmodule TracyWeb.PlanLive.Show do
   defp blank_to_nil(""), do: nil
   defp blank_to_nil(nil), do: nil
   defp blank_to_nil(val), do: val
+
+  defp dispatch_button_title(_status, true),
+    do: "Blocked by upstream task(s) — dispatch the blocker first"
+
+  defp dispatch_button_title("failed", false), do: "Retry — last dispatch errored"
+  defp dispatch_button_title("paused", false), do: "Retry — was paused at the budget gate"
+  defp dispatch_button_title(_status, false), do: "Dispatch a worker for this task"
 
   defp brief_preview(nil), do: nil
   defp brief_preview(""), do: nil

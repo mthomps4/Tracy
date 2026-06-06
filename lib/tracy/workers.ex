@@ -27,18 +27,35 @@ defmodule Tracy.Workers do
       end
   """
   alias Phoenix.PubSub
-  alias Tracy.Plans
+  alias Tracy.{Billing, Plans}
   alias Tracy.Plans.Task
   alias Tracy.Workers.{Server, Supervisor}
 
-  @type opts :: [adapter: module(), adapter_opts: keyword()]
+  @type opts :: [
+          adapter: module(),
+          adapter_opts: keyword(),
+          initiated_by: :user | :auto,
+          force: boolean()
+        ]
 
   @doc """
   Dispatch a worker against a task.
 
-  Returns `{:ok, pid}` if the worker started, or `{:error, reason}`.
+  Returns `{:ok, pid}` if the worker started, `{:error, reason}` if it
+  refused. Refusal reasons include `:not_found`, `:budget_paused`
+  (the cost-meter gate fired), or any supervisor error.
+
   The pid is for observability — the worker drives itself to completion
   and broadcasts events along the way.
+
+  Options:
+
+    * `:adapter` / `:adapter_opts` — override the role's default adapter
+    * `:initiated_by` — `:user` (default for manual UI dispatch) or
+      `:auto` (chain fan-out). Drives the 75% wind-down threshold:
+      auto-dispatches pause above 75%, manual dispatches don't.
+    * `:force` — bypass the hard-stop gate above 85%. Reserved for
+      explicit user override; default `false`.
   """
   @spec dispatch(String.t() | Task.t(), opts()) ::
           {:ok, pid()} | {:error, term()}
@@ -56,6 +73,20 @@ defmodule Tracy.Workers do
   end
 
   defp do_dispatch(task_id, role, opts) do
+    initiated_by = Keyword.get(opts, :initiated_by, :user)
+    force? = Keyword.get(opts, :force, false)
+
+    case budget_decision(initiated_by, force?) do
+      {:ok, _} ->
+        spawn_worker(task_id, role, opts)
+
+      {:pause, budget_state} ->
+        pause_task(task_id, budget_state, initiated_by)
+        {:error, {:budget_paused, budget_state}}
+    end
+  end
+
+  defp spawn_worker(task_id, role, opts) do
     adapter = Keyword.get(opts, :adapter) || adapter_for_role(role)
     adapter_opts = Keyword.get(opts, :adapter_opts, [])
 
@@ -67,6 +98,53 @@ defmodule Tracy.Workers do
       {:ok, pid} -> {:ok, pid}
       {:error, {:already_started, pid}} -> {:ok, pid}
       {:error, _} = err -> err
+    end
+  end
+
+  # ---- budget gate ----
+
+  @doc """
+  Decide whether a dispatch should proceed based on the current cost
+  meter. Public so it can be unit-tested without spawning Worker.Server
+  processes (which carry DB-sandbox complications in tests).
+
+  Returns `{:ok, status}` (proceed) or `{:pause, status}` (gate). The
+  status map is the full `Billing.sdk_pool_status/0` snapshot so the
+  caller can stamp it on the task for the UI to render the "why."
+
+  Thresholds:
+    * `force? = true` → always proceed (explicit user override)
+    * pct ≥ hardstop_pct (85%) → pause (both manual + auto)
+    * pct ≥ winddown_pct (75%) AND `initiated_by = :auto` → pause
+    * otherwise → proceed
+  """
+  @spec budget_decision(:user | :auto, boolean()) :: {:ok, map()} | {:pause, map()}
+  def budget_decision(initiated_by, force?) do
+    status = Billing.sdk_pool_status()
+
+    cond do
+      force? -> {:ok, status}
+      status.pct >= status.hardstop_pct -> {:pause, status}
+      status.pct >= status.winddown_pct and initiated_by == :auto -> {:pause, status}
+      true -> {:ok, status}
+    end
+  end
+
+  defp pause_task(task_id, budget_state, initiated_by) do
+    case Tracy.Repo.get(Task, task_id) do
+      nil ->
+        :ok
+
+      task ->
+        case Plans.mark_task_paused(task, budget_state, initiated_by: initiated_by) do
+          {:ok, paused} ->
+            PubSub.broadcast(Tracy.PubSub, Server.topic(task_id), {:worker_event, task_id, {:worker_paused, paused, budget_state}})
+            PubSub.broadcast(Tracy.PubSub, "plans", :plans_changed)
+            :ok
+
+          _ ->
+            :ok
+        end
     end
   end
 

@@ -48,9 +48,9 @@ defmodule Tracy.WorkersTest do
 
       assert {:ok, _pid} = Workers.dispatch(task, adapter: RaisingAdapter)
 
-      assert_receive {:worker_event, _, {:worker_failed, blocked, _reason}}, 2_000
-      assert blocked.status == "blocked"
-      assert get_in(blocked.metadata, ["last_failure", "reason"]) =~ "boom"
+      assert_receive {:worker_event, _, {:worker_failed, failed, _reason}}, 2_000
+      assert failed.status == "failed"
+      assert get_in(failed.metadata, ["last_failure", "reason"]) =~ "boom"
     end
   end
 
@@ -233,6 +233,71 @@ defmodule Tracy.WorkersTest do
       ready = Plans.tasks_ready_after(a.id)
       assert Enum.map(ready, & &1.id) == [b.id]
       assert Enum.all?(ready, & &1.auto_dispatch)
+    end
+  end
+
+  describe "budget gate" do
+    setup do
+      # Save and restore the test config — the gate is config-driven via
+      # Billing.sdk_pool_status, which reads from billing_ledger rows.
+      # We simulate by inserting a single high-cost AgentRun.
+      :ok
+    end
+
+    test "manual dispatch above 85% returns {:error, :budget_paused} and marks task paused" do
+      pump_spend_to_pct(90)
+
+      {:ok, plan} = Plans.create_plan(%{title: "budget"})
+      {:ok, task} = Plans.create_task(%{plan_id: plan.id, title: "should pause", role: "engineer"})
+
+      assert {:error, {:budget_paused, status}} =
+               Workers.dispatch(task, initiated_by: :user)
+
+      assert status.pct >= 85
+      reloaded = Plans.get_task!(task.id)
+      assert reloaded.status == "paused"
+      assert get_in(reloaded.metadata, ["budget_state", "initiated_by"]) == "user"
+    end
+
+    test "budget_decision in the 75-85% band: auto pauses, user proceeds" do
+      pump_spend_to_pct(80)
+
+      assert {:pause, status} = Workers.budget_decision(:auto, false)
+      assert status.pct >= 75 and status.pct < 85
+
+      assert {:ok, _} = Workers.budget_decision(:user, false)
+    end
+
+    test "budget_decision above 85%: both pause unless forced" do
+      pump_spend_to_pct(90)
+
+      assert {:pause, _} = Workers.budget_decision(:auto, false)
+      assert {:pause, _} = Workers.budget_decision(:user, false)
+
+      # :force bypasses the hardstop
+      assert {:ok, status} = Workers.budget_decision(:user, true)
+      assert status.pct >= 85
+    end
+
+    # Push the SDK-pool spend to the target percentage by inserting a
+    # single AgentRun whose cost lands us there. Sandbox-isolated so
+    # this doesn't leak between tests.
+    defp pump_spend_to_pct(target_pct) do
+      pool = Tracy.Billing.sdk_pool_status()
+      target_micros = ceil(pool.cap_micros * target_pct / 100)
+
+      {:ok, _} =
+        Tracy.Billing.record_run(%{
+          role: "main",
+          provider: "stub",
+          model: "stub",
+          bucket: "sdk_pool",
+          cost_micros: target_micros,
+          started_at: DateTime.utc_now(),
+          completed_at: DateTime.utc_now()
+        })
+
+      :ok
     end
   end
 

@@ -17,7 +17,7 @@ defmodule Tracy.Plans.Task do
   @foreign_key_type :binary_id
 
   @roles ~w(engineer designer researcher pm reviewer note_taker operator scout)
-  @statuses ~w(triage backlog in_progress in_review needs_input blocked done canceled)
+  @statuses ~w(triage backlog in_progress in_review needs_input blocked failed paused done canceled)
 
   def roles, do: @roles
   def statuses, do: @statuses
