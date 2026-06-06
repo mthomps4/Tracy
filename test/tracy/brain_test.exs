@@ -68,6 +68,38 @@ defmodule Tracy.BrainTest do
       refute prompt =~ "## Relevant memory"
     end
 
+    test "respects max_memory_chars and discloses truncation" do
+      # Seed a fat fact AND a fat episode so retrieval has stuff to trim.
+      Enum.each(1..6, fn n ->
+        Memory.record_fact(%{
+          statement: "Fact #{n}: " <> String.duplicate("padding ", 60),
+          subject: "test:bulk"
+        })
+      end)
+
+      Enum.each(1..6, fn n ->
+        Memory.record_episode(%{
+          source: "test",
+          body: "Episode #{n} text " <> String.duplicate("more padding ", 60),
+          metadata: %{"role" => "user"}
+        })
+      end)
+
+      prompt =
+        Brain.build_system_prompt(
+          [user_msg("padding")],
+          max_facts: 6,
+          max_episodes: 6,
+          max_memory_chars: 800
+        )
+
+      # Truncation disclosure lands when we hit the budget
+      assert prompt =~ "exceeded the budget"
+      # And the prompt is genuinely smaller — not unboundedly inflated
+      # by however many results matched.
+      assert byte_size(prompt) < 9_000
+    end
+
     test "gracefully degrades if memory throws" do
       # Even a query that breaks something at the Memory layer shouldn't
       # blow up the LLM call. Brain catches and returns persona-only.

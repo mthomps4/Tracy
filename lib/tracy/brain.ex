@@ -41,12 +41,24 @@ defmodule Tracy.Brain do
 
   alias Tracy.{Memory, Persona}
 
+  # Character budget for the memory block. Proxy for tokens — at ~4
+  # chars/token English-leaning, 6000 chars ≈ 1500 tokens, which keeps
+  # the memory injection bounded vs. the rest of the system prompt
+  # (persona + surface = ~5000 chars / ~1250 tokens). Adjustable via
+  # the :max_memory_chars opt.
+  @default_max_memory_chars 6_000
+
   @doc """
   Build a complete system prompt for one LLM call.
 
   Pulls the last user message, retrieves relevant facts + episodes, and
   layers them onto the Persona base. Returns a string ready to drop
   into the SDK's `append_system_prompt` field.
+
+  Memory injection is bounded by `:max_memory_chars` — facts get priority
+  over episodes; if everything won't fit, episodes truncate first
+  (they're recoverable from the log), then facts. We never silently drop
+  durable claims without telling Tracy the truncation happened.
   """
   @spec build_system_prompt([Tracy.LLM.Message.t()], keyword()) :: String.t()
   def build_system_prompt(messages, opts \\ []) do
@@ -55,6 +67,7 @@ defmodule Tracy.Brain do
     surface = Keyword.get(opts, :surface, :boardroom)
     max_facts = Keyword.get(opts, :max_facts, 5)
     max_episodes = Keyword.get(opts, :max_episodes, 5)
+    max_memory_chars = Keyword.get(opts, :max_memory_chars, @default_max_memory_chars)
     query = Keyword.get(opts, :memory_query) || last_user_text(messages)
 
     persona =
@@ -64,7 +77,7 @@ defmodule Tracy.Brain do
         in_flight_workers: in_flight_workers()
       )
 
-    memory_block = build_memory_block(query, max_facts, max_episodes)
+    memory_block = build_memory_block(query, max_facts, max_episodes, max_memory_chars)
     surface_block = build_surface_block(surface)
 
     [persona, memory_block, surface_block]
@@ -74,10 +87,10 @@ defmodule Tracy.Brain do
 
   # ---- memory retrieval ----
 
-  defp build_memory_block(nil, _, _), do: ""
-  defp build_memory_block("", _, _), do: ""
+  defp build_memory_block(nil, _, _, _), do: ""
+  defp build_memory_block("", _, _, _), do: ""
 
-  defp build_memory_block(query, max_facts, max_episodes) when is_binary(query) do
+  defp build_memory_block(query, max_facts, max_episodes, max_chars) when is_binary(query) do
     try do
       # Memory.search returns %{episodes: [{ep, score}], facts: [{f, score}], …}
       results = Memory.search(query, limit: max(max_facts, max_episodes))
@@ -99,7 +112,10 @@ defmodule Tracy.Brain do
           ""
 
         _ ->
-          render_memory_block(facts, episodes)
+          {trimmed_facts, trimmed_episodes, truncated?} =
+            fit_to_budget(facts, episodes, max_chars)
+
+          render_memory_block(trimmed_facts, trimmed_episodes, truncated?)
       end
     rescue
       e ->
@@ -109,12 +125,59 @@ defmodule Tracy.Brain do
     end
   end
 
-  defp build_memory_block(_, _, _), do: ""
+  defp build_memory_block(_, _, _, _), do: ""
+
+  # Fit facts + episodes into a character budget. Facts have priority
+  # (they're durable observations); episodes truncate first when we
+  # have to. Returns {facts, episodes, truncated?} so render_memory_block
+  # can disclose the truncation to Tracy.
+  defp fit_to_budget(facts, episodes, max_chars) do
+    fact_chars = facts |> Enum.map(fn f -> byte_size(fact_line(f)) + 1 end) |> Enum.sum()
+    episode_chars = episodes |> Enum.map(fn e -> byte_size(episode_line(e)) + 1 end) |> Enum.sum()
+
+    total = fact_chars + episode_chars
+
+    cond do
+      total <= max_chars ->
+        {facts, episodes, false}
+
+      true ->
+        # Trim episodes first (least durable), keep facts intact unless
+        # they alone overshoot.
+        remaining_for_episodes = max(0, max_chars - fact_chars)
+        kept_episodes = take_under_budget(episodes, &episode_line/1, remaining_for_episodes)
+
+        # If even the facts blow the budget, trim them too (last resort).
+        kept_facts =
+          if fact_chars > max_chars do
+            take_under_budget(facts, &fact_line/1, max_chars)
+          else
+            facts
+          end
+
+        {kept_facts, kept_episodes, true}
+    end
+  end
+
+  defp take_under_budget(items, renderer, budget) do
+    {kept, _} =
+      Enum.reduce_while(items, {[], 0}, fn item, {acc, used} ->
+        size = byte_size(renderer.(item)) + 1
+
+        if used + size <= budget do
+          {:cont, {[item | acc], used + size}}
+        else
+          {:halt, {acc, used}}
+        end
+      end)
+
+    Enum.reverse(kept)
+  end
 
   defp unwrap({record, _score}), do: record
   defp unwrap(record), do: record
 
-  defp render_memory_block(facts, episodes) do
+  defp render_memory_block(facts, episodes, truncated?) do
     fact_lines =
       case facts do
         [] -> []
@@ -127,6 +190,13 @@ defmodule Tracy.Brain do
         _ -> ["### Past conversation that may be relevant", ""] ++ Enum.map(episodes, &episode_line/1) ++ [""]
       end
 
+    truncation_note =
+      if truncated? do
+        "_(Memory injection exceeded the budget; some results were trimmed. If you need the full set, search again with a tighter query.)_\n\n"
+      else
+        ""
+      end
+
     """
     ---
 
@@ -136,7 +206,7 @@ defmodule Tracy.Brain do
     you have a real observation in front of you. Cite the source episode
     or fact when you act on it ("based on what we said on Jun 5: …").
 
-    #{Enum.join(fact_lines ++ episode_lines, "\n")}
+    #{truncation_note}#{Enum.join(fact_lines ++ episode_lines, "\n")}
     """
     |> String.trim_trailing()
   end
