@@ -142,10 +142,16 @@ defmodule Tracy.Workers.Claude do
 
   # ---- prompt construction ----
 
-  defp build_prompt(%Task{} = task, workspace) do
+  @doc """
+  Compose the user-facing prompt for a worker task. Public so role-specific
+  prompt content can be unit-tested without driving the SDK.
+  """
+  @spec build_prompt(Task.t(), String.t()) :: String.t()
+  def build_prompt(%Task{} = task, workspace) do
     """
     Role: #{task.role}
     Plan task: #{task.title}
+    Task ID: #{task.id}
 
     #{if task.brief && task.brief != "", do: "Brief:\n#{task.brief}", else: "(No brief provided — interpret the task title.)"}
 
@@ -154,6 +160,58 @@ defmodule Tracy.Workers.Claude do
     persist across dispatches and are visible to other workers on the
     same plan. `ls` to see what previous workers left behind; organise
     with `mkdir` as needed.
+
+    Committing your work:
+
+    If you create or modify files in the **git-tracked source tree** —
+    anything outside the per-plan workspace (which is gitignored) —
+    commit them locally before finishing. Each task → its own commit
+    so Tracy can roll back per-task. **Do not push** — Matt handles git
+    remotes himself.
+
+    Rules:
+
+    1. Stage with explicit file paths: `git add path/one path/two`.
+       NEVER `git add -A` or `git add .` — there may be other
+       uncommitted work in the repo that isn't yours.
+    2. Verify with `git diff --cached --stat` before committing. If
+       files you didn't touch are staged, abort and note it in
+       `## Summary`. Don't clean up someone else's work.
+    3. **Conventional Commits prefix** so changelog generation works:
+           feat:     new user-facing capability
+           fix:      bug fix
+           chore:    tooling / deps / config / housekeeping
+           style:    formatting only, no logic change
+           refactor: restructure without behavior change
+           docs:     documentation only
+           test:     test additions or fixes
+           perf:     performance improvement
+       Subject line: under 72 chars, imperative mood ("fix X", not "fixed X").
+    4. **End every commit message with the task trailer** so commits
+       map back to their originating task for rollback:
+           Tracy-Task: #{task.id}
+    5. One concern per commit. Multi-stage changes → multiple commits.
+    6. Never `git push`, amend, rebase, force-push, `reset --hard`, or
+       `stash drop`. Always create a NEW commit.
+
+    Example:
+
+        git add lib/tracy_web.ex
+        git diff --cached --stat   # confirm only your file is staged
+        git commit -m "$(cat <<'EOF'
+        fix: silence verified-routes warnings for new favicon paths
+
+        Add the new favicon filenames to TracyWeb.static_paths/0 so
+        the verified routes sigil resolves them. Files were already
+        serving via Plug.Static; this only silences the dev warnings.
+
+        Tracy-Task: #{task.id}
+        EOF
+        )"
+
+    If you only read files, or your only writes were under the
+    gitignored workspace, **do not commit** — nothing to track at the
+    repo level. Just report findings in `## Summary`.
 
     Do the work. Investigate with tools as needed. Modify files where the task
     calls for it. When you're finished, end your message with a short summary

@@ -103,4 +103,56 @@ defmodule Tracy.Workers.ClaudeTest do
       end
     end
   end
+
+  describe "build_prompt/2 — commit discipline" do
+    setup do
+      task = %Tracy.Plans.Task{
+        id: "11111111-2222-3333-4444-555555555555",
+        plan_id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        title: "Add favicon static_paths",
+        role: "engineer",
+        brief: "Add the new favicon filenames to TracyWeb.static_paths/0."
+      }
+
+      %{task: task, workspace: "/tmp/tracy-test/plans/aaaa"}
+    end
+
+    test "prompt includes the task id so workers can stamp the trailer", %{task: task, workspace: ws} do
+      prompt = Claude.build_prompt(task, ws)
+      assert prompt =~ "Task ID: #{task.id}"
+      # Trailer template references the actual id
+      assert prompt =~ "Tracy-Task: #{task.id}"
+    end
+
+    test "prompt teaches Conventional Commits + don't-push for any role that touches the repo", %{task: task, workspace: ws} do
+      prompt = Claude.build_prompt(task, ws)
+      assert prompt =~ "Conventional Commits"
+      assert prompt =~ "feat:"
+      assert prompt =~ "fix:"
+      assert prompt =~ "chore:"
+      assert prompt =~ "style:"
+      assert prompt =~ "Do not push"
+      assert prompt =~ "NEVER `git add -A`"
+    end
+
+    test "prompt tells workers NOT to commit when only workspace files were touched", %{task: task, workspace: ws} do
+      prompt = Claude.build_prompt(task, ws)
+      assert prompt =~ "gitignored workspace"
+      assert prompt =~ "do not commit"
+    end
+
+    test "the same guidance lands for a non-engineer role (commit is universal)" do
+      designer_task = %Tracy.Plans.Task{
+        id: "22222222-2222-2222-2222-222222222222",
+        plan_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        title: "design something",
+        role: "designer",
+        brief: "draw it"
+      }
+
+      prompt = Claude.build_prompt(designer_task, "/tmp/tracy-test/plans/bbbb")
+      assert prompt =~ "Conventional Commits"
+      assert prompt =~ "Tracy-Task: #{designer_task.id}"
+    end
+  end
 end
