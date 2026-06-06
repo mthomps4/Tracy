@@ -56,11 +56,23 @@ defmodule TracyWeb.ProjectsLive do
         </p>
       </header>
 
-      <section :if={@projects == []} class="rounded-box border border-dashed border-base-300/60 bg-base-200/20 px-6 py-12 text-center">
-        <p class="text-base font-medium text-base-content/80">No projects yet.</p>
-        <p class="mt-1 text-xs text-base-content/50">
-          Tell me what you want to work on — I'll start one.
+      <section :if={@projects == []} class="rounded-box border border-dashed border-primary/25 bg-gradient-to-br from-primary/5 to-transparent px-6 py-14 text-center">
+        <div class="mx-auto mb-3 grid size-12 place-items-center rounded-full bg-primary/15 text-primary">
+          <.icon name="hero-rectangle-stack" class="size-6" />
+        </div>
+        <p class="text-base font-semibold text-base-content">No projects yet.</p>
+        <p class="mx-auto mt-2 max-w-sm text-sm text-base-content/60">
+          Tell me what you want to work on in chat — I'll start a project for it
+          and you'll see it here as it grows. Or you can create one explicitly
+          from the boardroom by saving a conversation as a plan.
         </p>
+        <.link
+          navigate={~p"/boardroom"}
+          class="mt-4 inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-content hover:bg-primary/90"
+        >
+          Start a conversation
+          <.icon name="hero-arrow-right-mini" class="size-3.5" />
+        </.link>
       </section>
 
       <section :if={@projects != []} class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

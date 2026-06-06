@@ -509,9 +509,18 @@ defmodule TracyWeb.ChatDockLive do
           class="chat-dock__messages"
         >
           <article id="chat-dock-empty" class="only:flex hidden chat-dock__empty">
-            <p>Say hi.</p>
+            <div class="chat-dock__greeting-avatar" aria-hidden="true">
+              <span>T</span>
+            </div>
+            <p class="chat-dock__greeting-headline">Hi. I'm Tracy.</p>
+            <p class="chat-dock__greeting-body">
+              I'm running on your NUC. I remember conversations across
+              sessions, route work to the right specialists when something
+              needs more than chat, and I won't push to remote without you.
+            </p>
             <p class="chat-dock__empty-hint">
-              Cmd+J to open / close. Tap 🎤 to talk.
+              Say something to start — or try <kbd>/help</kbd> for slash commands.
+              <kbd>Cmd</kbd>+<kbd>J</kbd> closes this. 🎤 if you'd rather talk.
             </p>
           </article>
 

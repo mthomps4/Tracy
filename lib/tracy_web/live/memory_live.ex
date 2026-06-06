@@ -101,22 +101,29 @@ defmodule TracyWeb.MemoryLive do
         </nav>
 
         <div :if={@active_tab == "facts"} class="space-y-2">
-          <p :if={@facts == []} class="rounded-box border border-dashed border-base-300/60 bg-base-200/20 px-4 py-8 text-center text-sm text-base-content/50">
-            No facts yet. Tell me something durable in chat and I'll record one.
-          </p>
+          <.memory_empty_state :if={@facts == []}
+            icon="hero-light-bulb"
+            title="No facts yet."
+            body="Facts are durable claims I extract from our conversations — preferences, constraints, project conventions. Tell me something I should remember and I'll record it."
+          />
           <.fact_card :for={fact <- @facts} fact={fact} />
         </div>
 
         <div :if={@active_tab == "episodes"} class="space-y-2">
-          <p :if={@episodes == []} class="rounded-box border border-dashed border-base-300/60 bg-base-200/20 px-4 py-8 text-center text-sm text-base-content/50">
-            No episodes yet. Start a conversation.
-          </p>
+          <.memory_empty_state :if={@episodes == []}
+            icon="hero-chat-bubble-bottom-center-text"
+            title="No episodes yet."
+            body="Every conversation lands here. Start one and you'll see the turns flowing in."
+          />
           <.episode_card :for={ep <- @episodes} episode={ep} />
         </div>
 
-        <div :if={@active_tab == "procedures"} class="rounded-box border border-dashed border-base-300/60 bg-base-200/20 px-4 py-8 text-center text-sm text-base-content/50">
-          Procedures view — coming soon. Versioned how-to-do-X knowledge
-          lives here once the consolidator starts emitting them.
+        <div :if={@active_tab == "procedures"}>
+          <.memory_empty_state
+            icon="hero-cog-8-tooth"
+            title="Procedures — coming soon."
+            body="Versioned how-to-do-X knowledge. Once the daily consolidator job runs Haiku over recent episodes, recurring patterns get promoted here as named procedures."
+          />
         </div>
       <% end %>
     </Layouts.app>
@@ -254,6 +261,24 @@ defmodule TracyWeb.MemoryLive do
         {@snippet}
       </p>
     </article>
+    """
+  end
+
+  attr :icon, :string, required: true
+  attr :title, :string, required: true
+  attr :body, :string, required: true
+
+  defp memory_empty_state(assigns) do
+    ~H"""
+    <div class="rounded-box border border-dashed border-primary/25 bg-gradient-to-br from-primary/5 to-transparent px-6 py-10 text-center">
+      <div class="mx-auto mb-3 grid size-11 place-items-center rounded-full bg-primary/15 text-primary">
+        <.icon name={@icon} class="size-5" />
+      </div>
+      <p class="text-base font-semibold text-base-content">{@title}</p>
+      <p class="mx-auto mt-2 max-w-md text-sm leading-relaxed text-base-content/60">
+        {@body}
+      </p>
+    </div>
     """
   end
 
