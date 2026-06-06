@@ -77,7 +77,23 @@ defmodule Tracy.MixProject do
       # Tracy's calls land on the Max plan SDK credit pool. See
       # ~/.claude/projects/-home-matt-Code/memory/feedback_claude_sdk_only_not_anthropix.md
       # for why we use the SDK and not raw anthropix HTTP.
-      {:claude_agent_sdk, "~> 0.1"}
+      {:claude_agent_sdk, "~> 0.1"},
+
+      # Local embeddings via Bumblebee + EXLA. Replaces the HTTP embedder
+      # with an on-machine Nomic-Embed-v2 model (Apache 2.0). First boot
+      # downloads ~250MB into `~/.cache/bumblebee/`. CPU inference is fine
+      # for single-user volume; EXLA bundles a precompiled XLA binary so
+      # no CUDA / system installs required.
+      {:bumblebee, "~> 0.7"},
+      {:nx, "~> 0.10"},
+      {:exla, "~> 0.10"},
+      # progress_bar 3.0.0 (transitive via bumblebee) constrains decimal
+      # to ~> 2.0, which collides with ecto 3.14's decimal ~> 3.0. The
+      # upstream package is unmaintained — Henrik hasn't shipped a fix.
+      # Vendor a copy with the constraint relaxed to `~> 2.0 or ~> 3.0`
+      # and override the transitive resolution. Works identically; the
+      # only diff is one character in the dep spec.
+      {:progress_bar, path: "deps_vendor/progress_bar", override: true}
     ]
   end
 

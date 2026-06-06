@@ -33,6 +33,12 @@ config :tracy, Tracy.LLM,
   adapter: Tracy.LLM.Stub,
   default_model: "stub"
 
+# Nx default backend — EXLA's XLA compiler does the heavy math when
+# Bumblebee loads Nomic-Embed-v2 for local embeddings. Falls back to
+# the binary backend (pure-Elixir, much slower) automatically if EXLA
+# can't load its precompiled binary for some reason.
+config :nx, default_backend: EXLA.Backend
+
 # Swoosh: local-only mail in dev (/dev/mailbox), no SMTP. Prod adapter set in runtime.exs if/when needed.
 config :tracy, Tracy.Mailer, adapter: Swoosh.Adapters.Local
 config :swoosh, :api_client, false
