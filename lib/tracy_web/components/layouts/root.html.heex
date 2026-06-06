@@ -5,7 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0e1d2e" />
     <meta name="csrf-token" content={get_csrf_token()} />
-    <link rel="apple-touch-icon" href={~p"/images/apple-touch-icon.png"} />
+    <link rel="icon" href={~p"/favicon.svg"} type="image/svg+xml" />
+    <link rel="icon" href={~p"/favicon-32.png"} type="image/png" sizes="32x32" />
+    <link rel="icon" href={~p"/favicon-16.png"} type="image/png" sizes="16x16" />
+    <link rel="shortcut icon" href={~p"/favicon.ico"} />
+    <link rel="apple-touch-icon" href={~p"/apple-touch-icon.png"} sizes="180x180" />
     <.live_title default="Tracy" suffix=" · boardroom">
       {assigns[:page_title]}
     </.live_title>
@@ -33,5 +37,17 @@
   </head>
   <body class="min-h-dvh bg-base-100 text-base-content antialiased">
     {@inner_content}
+
+    <%!-- ChatDock — JARVIS surface, always available. Mounted sticky from
+         root layout so it survives live_redirect across pages. Gated on
+         a present current_scope so unauthenticated pages don't bootstrap
+         a Tracy.Session for nobody. --%>
+    <%= if assigns[:current_scope] && assigns[:socket] do %>
+      {live_render(@socket, TracyWeb.ChatDockLive,
+        id: "chat-dock-#{@current_scope.user.id}",
+        sticky: true,
+        session: %{"user_id" => @current_scope.user.id}
+      )}
+    <% end %>
   </body>
 </html>
