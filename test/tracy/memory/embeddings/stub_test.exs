@@ -3,9 +3,9 @@ defmodule Tracy.Memory.Embeddings.StubTest do
 
   alias Tracy.Memory.Embeddings.Stub
 
-  test "embed/1 returns a 1024-dimensional vector" do
+  test "embed/1 returns a 768-dimensional vector" do
     assert {:ok, vec} = Stub.embed("hello")
-    assert length(vec) == 1024
+    assert length(vec) == 768
   end
 
   test "embed/1 is deterministic" do

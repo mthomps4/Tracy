@@ -3,15 +3,19 @@ defmodule Tracy.Memory.Embeddings.Stub do
   Deterministic embedding provider for dev/test.
 
   Hashes the input text via SHA-256, seeds `:rand` from the digest, and emits
-  a 1024-dim unit vector. Same input → same vector, every time. Different
-  inputs → different vectors. Good enough to exercise pgvector queries and
-  cosine-distance ranking without spending real money or downloading models.
+  a 768-dim unit vector — matches Nomic-Embed-v1.5's native dimension so the
+  pgvector `vector(768)` column accepts both Stub and Nomic output without
+  schema differences between environments.
+
+  Same input → same vector, every time. Different inputs → different
+  vectors. Good enough to exercise pgvector queries and cosine-distance
+  ranking without spending real money or downloading models.
 
   Behaviour: `Tracy.Memory.Embeddings.Provider`.
   """
   @behaviour Tracy.Memory.Embeddings.Provider
 
-  @dim 1024
+  @dim 768
 
   @impl true
   def embed(text, _opts \\ []) when is_binary(text) do

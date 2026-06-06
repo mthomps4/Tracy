@@ -18,6 +18,9 @@ defmodule Tracy.Application do
       Tracy.Session.Supervisor,
       # Workers — DynamicSupervisor for per-task worker GenServers
       Tracy.Workers.Supervisor,
+      # Local embedder. Lazy-loads the Nomic model on first request, so
+      # boot is fast even though the warm model lives here.
+      Tracy.Memory.Embeddings.Nomic,
       TracyWeb.Endpoint
     ]
 

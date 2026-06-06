@@ -16,7 +16,7 @@ defmodule Tracy.MemoryTest do
       assert ep.source == "session"
       assert ep.occurred_at != nil
       assert ep.embedding != nil
-      assert length(Pgvector.to_list(ep.embedding)) == 1024
+      assert length(Pgvector.to_list(ep.embedding)) == 768
     end
 
     test "respects embed: false" do

@@ -39,6 +39,12 @@ config :tracy, Tracy.LLM,
 # can't load its precompiled binary for some reason.
 config :nx, default_backend: EXLA.Backend
 
+# Local embeddings via Bumblebee + Nomic-Embed-text-v1.5. Apache 2.0,
+# 768-dim, runs on CPU. First call after boot downloads ~250MB into
+# ~/.cache/bumblebee/ then warm in-process. Tests stay on Stub.
+config :tracy, Tracy.Memory.Embeddings,
+  provider: Tracy.Memory.Embeddings.Nomic
+
 # Swoosh: local-only mail in dev (/dev/mailbox), no SMTP. Prod adapter set in runtime.exs if/when needed.
 config :tracy, Tracy.Mailer, adapter: Swoosh.Adapters.Local
 config :swoosh, :api_client, false

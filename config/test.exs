@@ -36,3 +36,13 @@ config :phoenix_live_view,
 # Sort query params output of verified routes for robust url comparisons
 config :phoenix,
   sort_verified_routes_query_params: true
+
+# Tests keep the Stub embedder — Nomic's first-call model load would
+# add 5-30s to the first test that touches Memory, and the Stub returns
+# deterministic vectors anyway.
+config :tracy, Tracy.Memory.Embeddings,
+  provider: Tracy.Memory.Embeddings.Stub
+
+# Tests stay on the BinaryBackend — EXLA isn't needed for deterministic
+# Stub vectors, and BinaryBackend boots instantly.
+config :nx, default_backend: Nx.BinaryBackend
