@@ -110,6 +110,27 @@ defmodule Tracy.BrainTest do
   end
 
   describe "in-flight workers in the persona context" do
+    setup do
+      # Other tests (especially Tracy.WorkersTest) leave Worker.Server
+      # children in the global supervisor; force-stop any so this
+      # assertion is reliable.
+      Tracy.Workers.Supervisor
+      |> DynamicSupervisor.which_children()
+      |> Enum.each(fn
+        {_, pid, _, _} when is_pid(pid) ->
+          try do
+            GenServer.stop(pid, :normal, 200)
+          catch
+            :exit, _ -> :ok
+          end
+
+        _ ->
+          :ok
+      end)
+
+      :ok
+    end
+
     test "lists running worker labels in the context block" do
       # Hard to start a real worker here without crossing into the
       # DB-sandbox testing rabbit hole; rely on the integration test

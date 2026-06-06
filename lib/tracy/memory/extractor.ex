@@ -133,9 +133,83 @@ defmodule Tracy.Memory.Extractor do
 
   defp already_known?(_), do: false
 
-  defp build_tags(candidate, nil), do: Enum.uniq(["from_chat"] ++ (candidate[:tags] || []))
-  defp build_tags(candidate, project), do: Enum.uniq(["from_chat", project] ++ (candidate[:tags] || []))
+  defp build_tags(candidate, nil), do: Enum.uniq(default_origin_tag(candidate) ++ (candidate[:tags] || []))
+  defp build_tags(candidate, project), do: Enum.uniq([project | default_origin_tag(candidate)] ++ (candidate[:tags] || []))
+
+  # Workers tag their candidates with from_worker:<role>; chat-extracted
+  # facts default to from_chat. The opts-passed `:origin_tag` overrides.
+  defp default_origin_tag(%{origin: tag}) when is_binary(tag), do: [tag]
+  defp default_origin_tag(_), do: ["from_chat"]
 
   defp default_subject(nil), do: "user:matt"
   defp default_subject(project), do: "project:#{project}"
+
+  # ---- worker report path ----
+
+  @doc """
+  Extract durable claims from a completed worker's report. The report's
+  summary + next-step bullets + full-text get folded into a synthetic
+  user message and run through the standard provider chain.
+
+  Facts are tagged `from_worker:<role>` so they're distinguishable from
+  facts Matt typed himself.
+
+  Returns `{:ok, [Fact]}`.
+  """
+  @spec from_worker(Tracy.Plans.Task.t(), map(), keyword()) ::
+          {:ok, [Tracy.Memory.Fact.t()]}
+  def from_worker(%Tracy.Plans.Task{} = task, report, opts \\ []) when is_map(report) do
+    body = synthesize_report_body(report)
+
+    if String.trim(body) == "" do
+      {:ok, []}
+    else
+      synthetic = [%Tracy.LLM.Message{role: :user, content: body, metadata: %{}}]
+
+      providers = Keyword.get(opts, :providers, [Tracy.Memory.Extractor.Heuristic])
+      project = Keyword.get(opts, :project) || task.role
+      origin = "from_worker:#{task.role}"
+      max_per_turn = Keyword.get(opts, :max_per_turn, 5)
+
+      candidates =
+        providers
+        |> Enum.flat_map(fn provider -> safe_extract(provider, synthetic, opts) end)
+        |> Enum.uniq_by(&dedupe_key/1)
+        |> Enum.take(max_per_turn)
+        |> Enum.map(&Map.put(&1, :origin, origin))
+        |> Enum.reject(&already_known?/1)
+
+      persisted =
+        Enum.flat_map(candidates, fn candidate ->
+          attrs = Map.merge(candidate, %{
+            tags: build_tags(candidate, project),
+            subject: candidate[:subject] || "worker:#{task.role}",
+            confidence: Map.get(candidate, :confidence, 0.7)
+          })
+
+          case Memory.record_fact(attrs) do
+            {:ok, fact} -> [fact]
+            {:error, _cs} -> []
+          end
+        end)
+
+      {:ok, persisted}
+    end
+  end
+
+  defp synthesize_report_body(report) do
+    summary = Map.get(report, :summary, "") |> to_string()
+    files = Map.get(report, :files_changed, []) |> List.wrap()
+    next_steps = Map.get(report, :proposed_next_steps, []) |> List.wrap()
+    full = get_in(report, [:metadata, "full_text"]) || ""
+
+    [
+      summary,
+      if(next_steps != [], do: "Next steps: " <> Enum.join(next_steps, "; "), else: ""),
+      if(files != [], do: "Files touched: " <> Enum.join(files, ", "), else: ""),
+      full
+    ]
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.join("\n\n")
+  end
 end

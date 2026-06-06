@@ -207,6 +207,12 @@ defmodule Tracy.Workers.Server do
           {:worker_completed_notice, completed, report}
         )
 
+        # Worker output → fact extraction. Same Extractor module Brain
+        # uses for chat turns, just fed the report text instead of a
+        # user message. Fire-and-forget Task; a crashing extractor
+        # doesn't disrupt the completion broadcast.
+        learn_from_worker(completed, report)
+
         if new_tasks != [] do
           broadcast(state.task_id, {:worker_spawned_tasks, new_tasks})
         end
@@ -422,6 +428,32 @@ defmodule Tracy.Workers.Server do
   end
 
   defp broadcast_plans, do: PubSub.broadcast(Tracy.PubSub, "plans", :plans_changed)
+
+  # Fire-and-forget extraction. Reads the report's summary + next steps +
+  # full text and runs Tracy.Memory.Extractor.from_worker over it. Each
+  # learned fact gets broadcast on chat:notifications so the dock can
+  # show "🧠 Noted: ..." just like with chat-extracted facts.
+  defp learn_from_worker(task, report) do
+    if Application.get_env(:tracy, :extract_facts_inline, true) do
+      Task.start(fn ->
+        case Tracy.Memory.Extractor.from_worker(task, report) do
+          {:ok, []} ->
+            :ok
+
+          {:ok, facts} ->
+            require Logger
+            Logger.info("Tracy.Memory.Extractor: learned #{length(facts)} fact(s) from worker #{task.role}:#{task.id}")
+
+            Enum.each(facts, fn fact ->
+              PubSub.broadcast(Tracy.PubSub, "chat:notifications", {:fact_learned, fact})
+            end)
+
+          _ ->
+            :ok
+        end
+      end)
+    end
+  end
 
   defp stringify_keys(map) when is_map(map) do
     Map.new(map, fn

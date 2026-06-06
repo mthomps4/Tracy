@@ -127,5 +127,72 @@ defmodule Tracy.Memory.ExtractorTest do
     end
   end
 
+  describe "from_worker/3 — extracting from worker reports" do
+    setup do
+      {:ok, plan} = Tracy.Plans.create_plan(%{title: "favicon work"})
+
+      {:ok, task} =
+        Tracy.Plans.create_task(%{
+          plan_id: plan.id,
+          title: "Add the new favicon static paths",
+          role: "engineer"
+        })
+
+      %{task: task}
+    end
+
+    test "pulls durable claims from the report summary", %{task: task} do
+      report = %{
+        summary: "I prefer Conventional Commits with imperative subject lines.",
+        files_changed: [],
+        proposed_next_steps: [],
+        metadata: %{}
+      }
+
+      {:ok, facts} = Extractor.from_worker(task, report)
+
+      assert Enum.any?(facts, &(&1.statement =~ "Conventional Commits"))
+      # Tagged from_worker:<role>, not from_chat
+      assert Enum.any?(facts, &("from_worker:engineer" in &1.tags))
+    end
+
+    test "synthesizes summary + next steps + files into one search corpus", %{task: task} do
+      report = %{
+        summary: "Done.",
+        files_changed: ["lib/tracy_web.ex"],
+        proposed_next_steps: ["Remember that we use Tailscale Funnel for webhook ingress."],
+        metadata: %{}
+      }
+
+      {:ok, facts} = Extractor.from_worker(task, report)
+
+      assert Enum.any?(facts, &(&1.statement =~ "Tailscale Funnel"))
+    end
+
+    test "empty / no-cue report extracts nothing without crashing", %{task: task} do
+      report = %{
+        summary: "Worker finished.",
+        files_changed: [],
+        proposed_next_steps: [],
+        metadata: %{}
+      }
+
+      {:ok, facts} = Extractor.from_worker(task, report)
+      assert facts == []
+    end
+
+    test "honors max_per_turn cap", %{task: task} do
+      report = %{
+        summary: "I prefer A. I prefer B. I prefer C. I prefer D. I prefer E.",
+        files_changed: [],
+        proposed_next_steps: [],
+        metadata: %{}
+      }
+
+      {:ok, facts} = Extractor.from_worker(task, report, max_per_turn: 2)
+      assert length(facts) <= 2
+    end
+  end
+
   defp _silence_unused_alias, do: {Memory, Extractor}
 end
