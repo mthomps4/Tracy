@@ -189,7 +189,19 @@ defmodule Tracy.Workers.Server do
     spawned = Map.get(report, :spawned_tasks, []) || []
     report_for_db = report |> Map.drop([:cost_micros]) |> stringify_keys()
 
-    case Plans.complete_task(state.task, report_for_db, cost_micros: cost) do
+    # Record this worker's spend in the agent_runs ledger so the SDK pool
+    # meter + budget gate see it. Without this, only the boardroom chat
+    # LLM calls show up in Billing — workers can rack up $30 of spend and
+    # the meter still says $0.19. Link the run id back onto the task for
+    # auditability.
+    agent_run_id = log_worker_run(state.task, report, cost)
+
+    report_for_db = if agent_run_id, do: Map.put(report_for_db, "agent_run_id", agent_run_id), else: report_for_db
+
+    case Plans.complete_task(state.task, report_for_db,
+           cost_micros: cost,
+           agent_run_id: agent_run_id
+         ) do
       {:ok, completed} ->
         # Insert any proposed tasks AFTER marking this one done so the UI
         # shows the completion and the new tasks together.
@@ -416,6 +428,14 @@ defmodule Tracy.Workers.Server do
   defp fail(state, reason) do
     {:ok, failed} = Plans.mark_task_failed(state.task, reason)
 
+    # Failed workers may still have consumed SDK pool credits before
+    # erroring. Log a zero-cost run with the failure reason so the audit
+    # trail is complete even if the dollar figure is unknown.
+    _run_id =
+      log_worker_run(state.task, %{
+        metadata: %{"failed" => true, "reason" => inspect(reason, limit: 200)}
+      }, 0)
+
     broadcast(state.task_id, {:worker_failed, failed, reason})
 
     Phoenix.PubSub.broadcast(
@@ -459,6 +479,49 @@ defmodule Tracy.Workers.Server do
         end
       end)
     end
+  end
+
+  # Write an agent_run row capturing this worker's SDK pool spend.
+  # Returns the new run's id (binary), or nil if the write failed (we
+  # don't want to block completion on Billing hiccups).
+  defp log_worker_run(task, report, cost_micros) do
+    model =
+      (get_in(report, [:metadata, "model"]) || get_in(report, [:metadata, :model]) || "claude")
+      |> to_string()
+      |> case do
+        "" -> "claude"
+        s -> s
+      end
+
+    duration_ms = get_in(report, [:metadata, "duration_ms"]) || get_in(report, [:metadata, :duration_ms])
+
+    attrs = %{
+      session_id: nil,
+      role: task.role,
+      provider: "claude",
+      model: to_string(model),
+      bucket: "sdk_pool",
+      cost_micros: cost_micros,
+      duration_ms: duration_ms,
+      started_at: task.assigned_at || DateTime.utc_now(),
+      completed_at: DateTime.utc_now(),
+      metadata: %{"task_id" => task.id, "task_title" => task.title}
+    }
+
+    case Tracy.Billing.record_run(attrs) do
+      {:ok, run} ->
+        run.id
+
+      {:error, cs} ->
+        require Logger
+        Logger.warning("Tracy.Workers.Server: failed to log agent_run — #{inspect(cs.errors, limit: 200)}")
+        nil
+    end
+  rescue
+    e ->
+      require Logger
+      Logger.warning("Tracy.Workers.Server: log_worker_run raised — #{Exception.message(e)}")
+      nil
   end
 
   defp import_worker_artifacts(plan_id) do

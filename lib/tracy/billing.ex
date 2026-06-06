@@ -34,6 +34,92 @@ defmodule Tracy.Billing do
   @doc "Constant: the monthly SDK pool ceiling, in micros (= $100)."
   def sdk_pool_monthly_micros, do: @sdk_pool_monthly_micros
 
+  @doc """
+  Retrofit existing `tasks` rows that have `cost_micros > 0` but no
+  `agent_run_id` into the agent_runs ledger. One-shot — call from iex
+  or a release task after upgrading from a build where workers didn't
+  log their spend through Billing.
+
+  Returns `{:ok, created_count, skipped_count}`. Safe to re-run; tasks
+  that already have an `agent_run_id` are skipped.
+  """
+  @spec backfill_worker_runs(keyword()) :: {:ok, non_neg_integer(), non_neg_integer()}
+  def backfill_worker_runs(opts \\ []) do
+    dry_run? = Keyword.get(opts, :dry_run, false)
+
+    import Ecto.Query
+
+    candidates =
+      Tracy.Repo.all(
+        from t in Tracy.Plans.Task,
+          where: t.cost_micros > 0 and is_nil(t.agent_run_id),
+          select: t
+      )
+
+    {created, skipped} =
+      Enum.reduce(candidates, {0, 0}, fn task, {ok, skip} ->
+        model =
+          (get_in(task.report || %{}, ["metadata", "model"]) ||
+             get_in(task.report || %{}, [:metadata, :model]) ||
+             "claude")
+          |> to_string()
+          |> case do
+            "" -> "claude"
+            s -> s
+          end
+
+        duration_ms =
+          get_in(task.report || %{}, ["metadata", "duration_ms"]) ||
+            task.duration_ms
+
+        started_at =
+          task.assigned_at ||
+            task.inserted_at ||
+            DateTime.utc_now()
+
+        completed_at = task.completed_at || started_at
+
+        attrs = %{
+          session_id: nil,
+          role: task.role,
+          provider: "claude",
+          model: to_string(model),
+          bucket: "sdk_pool",
+          cost_micros: task.cost_micros,
+          duration_ms: duration_ms,
+          started_at: started_at,
+          completed_at: completed_at,
+          metadata: %{
+            "task_id" => task.id,
+            "task_title" => task.title,
+            "backfilled" => true
+          }
+        }
+
+        if dry_run? do
+          {ok + 1, skip}
+        else
+          case record_run(attrs) do
+            {:ok, run} ->
+              case Tracy.Repo.update_all(
+                     from(t in Tracy.Plans.Task, where: t.id == ^task.id),
+                     set: [agent_run_id: run.id]
+                   ) do
+                {1, _} -> {ok + 1, skip}
+                _ -> {ok, skip + 1}
+              end
+
+            {:error, cs} ->
+              require Logger
+              Logger.warning("backfill: task #{task.id} rejected — #{inspect(cs.errors, limit: 200)} attrs=#{inspect(attrs, limit: 300)}")
+              {ok, skip + 1}
+          end
+        end
+      end)
+
+    {:ok, created, skipped}
+  end
+
   @doc "Record a finished agent run."
   @spec record_run(map()) :: {:ok, AgentRun.t()} | {:error, Ecto.Changeset.t()}
   def record_run(attrs) do
