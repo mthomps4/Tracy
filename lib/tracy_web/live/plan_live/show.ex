@@ -40,6 +40,7 @@ defmodule TracyWeb.PlanLive.Show do
           |> assign(:assets, Assets.list_asset_summaries(plan.id))
           |> assign(:show_transition_menu?, false)
           |> assign(:new_task, %{title: "", role: "engineer", blocked_by: nil})
+          |> assign(:selected_task_ids, MapSet.new())
           |> assign(:task_transition_id, nil)
           |> assign(:new_link, %{filename: "", body: ""})
           |> assign(:active_tab, "tasks")
@@ -144,6 +145,55 @@ defmodule TracyWeb.PlanLive.Show do
     else
       {:noreply, socket}
     end
+  end
+
+  def handle_event("toggle_select_task", %{"id" => id}, socket) do
+    selected =
+      if MapSet.member?(socket.assigns.selected_task_ids, id) do
+        MapSet.delete(socket.assigns.selected_task_ids, id)
+      else
+        MapSet.put(socket.assigns.selected_task_ids, id)
+      end
+
+    {:noreply, assign(socket, :selected_task_ids, selected)}
+  end
+
+  def handle_event("clear_selection", _, socket) do
+    {:noreply, assign(socket, :selected_task_ids, MapSet.new())}
+  end
+
+  def handle_event("bulk_approve", _, socket) do
+    ids = socket.assigns.selected_task_ids
+
+    {ok_count, err_count} =
+      socket.assigns.plan.tasks
+      |> Enum.filter(&(&1.id in ids and &1.status == "backlog"))
+      |> Enum.reduce({0, 0}, fn task, {ok, err} ->
+        case Plans.approve_task(task) do
+          {:ok, _} -> {ok + 1, err}
+          {:error, _} -> {ok, err + 1}
+        end
+      end)
+
+    Phoenix.PubSub.broadcast(Tracy.PubSub, "plans", :plans_changed)
+
+    flash =
+      cond do
+        ok_count > 0 and err_count == 0 ->
+          "Approved #{ok_count} task#{if ok_count == 1, do: "", else: "s"}."
+
+        ok_count > 0 and err_count > 0 ->
+          "Approved #{ok_count}, but #{err_count} failed."
+
+        true ->
+          "Nothing approved."
+      end
+
+    {:noreply,
+     socket
+     |> put_flash(:info, flash)
+     |> assign(:selected_task_ids, MapSet.new())
+     |> reload_plan()}
   end
 
   def handle_event("toggle_task_menu", %{"id" => id}, socket) do
@@ -349,6 +399,8 @@ defmodule TracyWeb.PlanLive.Show do
         <% visible = filter_tasks(@plan.tasks, @task_filters) %>
         <% tasks_by_id = Enum.into(@plan.tasks, %{}, fn t -> {t.id, t} end) %>
 
+        <.bulk_action_bar :if={MapSet.size(@selected_task_ids) > 0} count={MapSet.size(@selected_task_ids)} />
+
         <section class="mb-4">
           <ul :if={visible != []} class="space-y-1.5">
             <li :for={task <- visible}>
@@ -356,6 +408,7 @@ defmodule TracyWeb.PlanLive.Show do
                 task={task}
                 menu_open?={@task_transition_id == task.id}
                 tasks_by_id={tasks_by_id}
+                selected?={MapSet.member?(@selected_task_ids, task.id)}
               />
             </li>
           </ul>
@@ -591,9 +644,39 @@ defmodule TracyWeb.PlanLive.Show do
     """
   end
 
+  attr :count, :integer, required: true
+
+  defp bulk_action_bar(assigns) do
+    ~H"""
+    <div class="sticky top-0 z-30 mb-2 flex flex-wrap items-center justify-between gap-2 rounded-box border border-primary/40 bg-primary/10 px-3 py-2 backdrop-blur sm:px-4">
+      <p class="text-xs font-medium text-primary">
+        {@count} selected
+      </p>
+      <div class="flex items-center gap-2">
+        <button
+          phx-click="bulk_approve"
+          class="btn btn-primary btn-xs"
+          title="Stamp the CEO approval on every selected backlog task"
+        >
+          <.icon name="hero-check-badge-mini" class="size-3" />
+          Approve selected
+        </button>
+        <button
+          phx-click="clear_selection"
+          class="btn btn-ghost btn-xs"
+        >
+          <.icon name="hero-x-mark-mini" class="size-3" />
+          Clear
+        </button>
+      </div>
+    </div>
+    """
+  end
+
   attr :task, :map, required: true
   attr :menu_open?, :boolean, required: true
   attr :tasks_by_id, :map, default: %{}
+  attr :selected?, :boolean, default: false
 
   defp task_row(assigns) do
     blockers =
@@ -614,6 +697,21 @@ defmodule TracyWeb.PlanLive.Show do
       @task.status != "done" && "border-base-300/60"
     ]}>
       <div class="flex items-start gap-3">
+        <button
+          :if={@task.status == "backlog"}
+          phx-click="toggle_select_task"
+          phx-value-id={@task.id}
+          class={[
+            "mt-0.5 grid size-5 shrink-0 place-items-center rounded border transition-colors",
+            @selected? && "border-primary bg-primary text-primary-content",
+            !@selected? && "border-base-300/70 text-base-content/30 hover:border-primary/60"
+          ]}
+          aria-label="Select task for bulk action"
+          aria-pressed={to_string(@selected?)}
+        >
+          <.icon :if={@selected?} name="hero-check-mini" class="size-3.5" />
+        </button>
+
         <button
           phx-click="toggle_task_menu"
           phx-value-id={@task.id}

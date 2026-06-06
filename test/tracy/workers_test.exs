@@ -191,22 +191,74 @@ defmodule Tracy.WorkersTest do
   end
 
   describe "auto-dispatch fan-out (chains)" do
-    # TODO: integration test for the full A→B auto-dispatch path is gated
-    # on figuring out the right sandbox.allow call for the dynamically-
-    # supervised Worker.Server children. The chain *logic* is covered:
-    #
-    #   - Plans.task_ready?/1 + Plans.tasks_ready_after/1 (plans_test.exs)
-    #   - Plans.approve_task/1 (CEO stamp) is what fan-out filters on
-    #   - Workers.Server fan-out scan is invoked on :worker_completed
-    #     and rescued so a sandbox failure doesn't crash the parent
-    #
-    # Manual verification path: create two tasks with the second's
-    # blocked_by pointing at the first, Approve the second (CEO stamp),
-    # then Dispatch the first. Watch the second's Live tab fill in as
-    # soon as A's report lands.
-    @tag :skip
-    test "completing a task fires its approved downstream (integration)" do
-      flunk("see TODO above — chain logic covered unit-wise; manual verify the wire")
+    setup do
+      # Prior tests (cancel's brutal-kill, RaisingAdapter) can leave
+      # Workers.Server zombies under the DynamicSupervisor. Force-stop any
+      # that are still hanging around so this test starts from a clean
+      # slate — otherwise their orphan messages or sandbox-connection
+      # holds can starve our chain.
+      Tracy.Workers.Supervisor
+      |> DynamicSupervisor.which_children()
+      |> Enum.each(fn
+        {_, pid, _, _} when is_pid(pid) ->
+          try do
+            GenServer.stop(pid, :normal, 200)
+          catch
+            :exit, _ -> :ok
+          end
+
+        _ ->
+          :ok
+      end)
+
+      # Workers.Server children inherit the supervisor's sandbox grant —
+      # allowing the supervisor lets every child use the shared connection.
+      Ecto.Adapters.SQL.Sandbox.allow(Tracy.Repo, self(), Process.whereis(Tracy.Workers.Supervisor))
+      :ok
+    end
+
+    test "completing a task fires its approved downstream end-to-end" do
+      {:ok, plan} = Plans.create_plan(%{title: "chain-it"})
+      {:ok, a} = Plans.create_task(%{plan_id: plan.id, title: "A", role: "engineer"})
+
+      {:ok, b} =
+        Plans.create_task(%{
+          plan_id: plan.id,
+          title: "B",
+          role: "engineer",
+          blocked_by: [a.id]
+        })
+
+      # CEO stamp on B so the fan-out includes it
+      {:ok, _approved_b} = Plans.approve_task(b)
+
+      a_id = a.id
+      b_id = b.id
+
+      Workers.subscribe(a_id)
+      Workers.subscribe(b_id)
+
+      assert {:ok, _pid} =
+               Workers.dispatch(a, adapter: Stub, adapter_opts: [delay_ms: 5])
+
+      # Pin a_id so we match A's completion, not B's later one
+      assert_receive {:worker_event, ^a_id, {:worker_completed, _, _}}, 2_000
+
+      # Server fans out auto-dispatch — B should fire shortly after A completes
+      assert_receive {:worker_event, ^b_id, {:worker_started, started_b}}, 2_000
+      assert started_b.id == b_id
+
+      # And B itself runs to completion
+      assert_receive {:worker_event, ^b_id, {:worker_completed, completed_b, _}}, 2_000
+      assert completed_b.id == b_id
+      assert completed_b.status == "done"
+
+      # Wait for both Worker.Servers to fully terminate before the test
+      # returns — otherwise on_exit closes the sandbox owner while the
+      # Servers' last DB writes are still in flight, which generates
+      # spurious crash logs. Both should be down within a beat.
+      assert wait_until_stopped(a_id), "Worker.Server for A did not stop"
+      assert wait_until_stopped(b_id), "Worker.Server for B did not stop"
     end
 
     test "tasks_ready_after returns the right downstream after a completion (no GenServer)" do
@@ -316,5 +368,33 @@ defmodule Tracy.WorkersTest do
     after
       Application.delete_env(:tracy, Workers)
     end
+  end
+
+  # ---- helpers ----
+
+  # Poll until Workers.running?(task_id) is false, or until timeout. The
+  # Worker.Server runs under a DynamicSupervisor (not the test process),
+  # so the test function can return before the Server's final DB writes
+  # land — triggering on_exit, closing the sandbox owner, and crashing
+  # the in-flight Server with "owner exited". This helper lets the test
+  # keep the owner alive until the Server has fully terminated.
+  defp wait_until_stopped(task_id, timeout_ms \\ 3_000) do
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+
+    poll = fn poll ->
+      cond do
+        not Workers.running?(task_id) ->
+          true
+
+        System.monotonic_time(:millisecond) >= deadline ->
+          false
+
+        true ->
+          Process.sleep(20)
+          poll.(poll)
+      end
+    end
+
+    poll.(poll)
   end
 end
