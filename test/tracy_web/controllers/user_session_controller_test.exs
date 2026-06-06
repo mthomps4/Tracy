@@ -85,8 +85,11 @@ defmodule TracyWeb.UserSessionControllerTest do
       assert get_session(conn, :user_token)
       assert redirected_to(conn) == ~p"/"
 
-      # Now do a logged in request and assert on the menu
+      # GET / when logged-in redirects to the boardroom (chat is the
+      # front door); follow that redirect and assert on the menu there.
       conn = get(conn, ~p"/")
+      assert redirected_to(conn) == ~p"/boardroom"
+      conn = get(conn, ~p"/boardroom")
       response = html_response(conn, 200)
       assert response =~ user.email
       assert response =~ ~p"/users/settings"
@@ -160,8 +163,10 @@ defmodule TracyWeb.UserSessionControllerTest do
       assert get_session(conn, :user_token)
       assert redirected_to(conn) == ~p"/"
 
-      # Now do a logged in request and assert on the menu
+      # GET / when logged-in redirects to /boardroom (chat-first front door)
       conn = get(conn, ~p"/")
+      assert redirected_to(conn) == ~p"/boardroom"
+      conn = get(conn, ~p"/boardroom")
       response = html_response(conn, 200)
       assert response =~ user.email
       assert response =~ ~p"/users/settings"
@@ -184,8 +189,10 @@ defmodule TracyWeb.UserSessionControllerTest do
 
       assert Accounts.get_user!(user.id).confirmed_at
 
-      # Now do a logged in request and assert on the menu
+      # GET / when logged-in redirects to /boardroom (chat-first front door)
       conn = get(conn, ~p"/")
+      assert redirected_to(conn) == ~p"/boardroom"
+      conn = get(conn, ~p"/boardroom")
       response = html_response(conn, 200)
       assert response =~ user.email
       assert response =~ ~p"/users/settings"
