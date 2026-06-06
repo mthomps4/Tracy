@@ -113,6 +113,29 @@ defmodule TracyWeb.ChatDockLiveTest do
       assert html =~ "DayJob"
     end
 
+    test "/remember stashes a fact and confirms in chat", %{view: view} do
+      view
+      |> form("form[phx-submit='send']", composer: "/remember Matt prefers Phoenix without umbrellas")
+      |> render_submit()
+
+      html = render(view)
+      assert html =~ "Recorded"
+      assert html =~ "Matt prefers Phoenix without umbrellas"
+
+      # And it landed in the Facts table
+      facts = Tracy.Memory.current_facts()
+      assert Enum.any?(facts, &(&1.statement =~ "umbrella"))
+    end
+
+    test "/remember without an argument explains the syntax", %{view: view} do
+      view
+      |> form("form[phx-submit='send']", composer: "/remember")
+      |> render_submit()
+
+      html = render(view)
+      assert html =~ "Tell me what to remember"
+    end
+
     test "unknown command produces a system message, not a Claude call", %{view: view} do
       view
       |> form("form[phx-submit='send']", composer: "/totallymadeup")

@@ -157,6 +157,7 @@ defmodule TracyWeb.ChatDockLive do
       :unpin -> cmd_unpin(socket)
       :memo -> cmd_memo(socket)
       :help -> cmd_help(socket)
+      {:remember, statement} -> cmd_remember(statement, socket)
       {:unknown, name} -> push_system("Unknown command `#{name}`. Try `/help`.", socket)
     end
   end
@@ -170,6 +171,8 @@ defmodule TracyWeb.ChatDockLive do
       ["/unpin"] -> :unpin
       ["/memo"] -> :memo
       ["/memo", _] -> :memo
+      ["/remember"] -> {:remember, ""}
+      ["/remember", rest] -> {:remember, String.trim(rest)}
       ["/help"] -> :help
       ["/help", _] -> :help
       ["/" <> name | _] -> {:unknown, name}
@@ -228,8 +231,40 @@ defmodule TracyWeb.ChatDockLive do
     `/switch <project>`  Alias for `/pin`.
     `/unpin`             Drop the pin, route implicitly again.
     `/memo`              Show a quick recap of the recent conversation.
+    `/remember <fact>`   Stash a durable claim into Facts — I'll pull it
+                         when relevant in future conversations. Tagged
+                         with the pinned project if one is set.
     `/help`              This list.
     """)
+  end
+
+  defp cmd_remember("", socket),
+    do: push_system("Tell me what to remember after the command — `/remember <statement>`.", socket)
+
+  defp cmd_remember(statement, socket) do
+    subject =
+      case socket.assigns.pinned_project do
+        nil -> "user:matt"
+        project -> "project:#{project}"
+      end
+
+    tags =
+      case socket.assigns.pinned_project do
+        nil -> ["from_chat"]
+        project -> ["from_chat", project]
+      end
+
+    attrs = %{statement: statement, subject: subject, tags: tags}
+
+    case Tracy.Memory.record_fact(attrs) do
+      {:ok, _fact} ->
+        socket
+        |> assign(:composer, "")
+        |> push_system("Recorded. I'll pull this when it's relevant.\n\n> #{statement}")
+
+      {:error, _cs} ->
+        push_system("Couldn't record that — the changeset rejected it. Statement: \"#{statement}\"", socket)
+    end
   end
 
   defp build_memo([], _project), do: "No conversation yet to recap."
