@@ -317,6 +317,21 @@ body {
 .chat-dock__header-id { display: flex; align-items: center; gap: 0.55rem; min-width: 0; }
 .chat-dock__header-name { font-size: 0.875rem; font-weight: 700; line-height: 1.1; }
 .chat-dock__header-sub  { font-size: 0.7rem; line-height: 1.1; color: color-mix(in oklab, var(--color-base-content) 55%, transparent); margin-top: 0.1rem; }
+.chat-dock__header-sub--warming {
+  color: color-mix(in oklab, var(--color-warning) 80%, var(--color-base-content));
+  font-style: italic;
+}
+.chat-dock__header-sub--warming::after {
+  content: "";
+  display: inline-block;
+  width: 0.35rem;
+  height: 0.35rem;
+  margin-left: 0.35rem;
+  border-radius: 50%;
+  background: var(--color-warning);
+  animation: chat-dock-pulse 1.2s ease-in-out infinite;
+  vertical-align: middle;
+}
 .chat-dock__header-actions { display: flex; gap: 0.25rem; }
 
 .chat-dock__icon-btn {

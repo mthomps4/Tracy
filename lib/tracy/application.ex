@@ -24,10 +24,27 @@ defmodule Tracy.Application do
       TracyWeb.Endpoint
     ]
 
-    # See https://hexdocs.pm/elixir/Supervisor.html
-    # for other strategies and supported options
     opts = [strategy: :one_for_one, name: Tracy.Supervisor]
-    Supervisor.start_link(children, opts)
+    result = Supervisor.start_link(children, opts)
+
+    # Kick off the embedder pre-warm in the background. Boot is unblocked;
+    # the model load happens in a separate Task and logs success/failure.
+    # The first Boardroom chat after boot will be fast instead of paying
+    # the ~5-30s model-load tax.
+    #
+    # Skipped in :test (the Stub adapter never needs the model) and when
+    # explicitly disabled via config.
+    maybe_warm_embedder()
+
+    result
+  end
+
+  defp maybe_warm_embedder do
+    if Application.get_env(:tracy, :prewarm_embedder, true) and
+         Application.get_env(:tracy, Tracy.Memory.Embeddings, [])
+         |> Keyword.get(:provider) == Tracy.Memory.Embeddings.Nomic do
+      Tracy.Memory.Embeddings.Nomic.warm_async()
+    end
   end
 
   # Tell Phoenix to update the endpoint configuration

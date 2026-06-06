@@ -58,6 +58,60 @@ defmodule Tracy.Memory.Embeddings.Nomic do
     GenServer.call(__MODULE__, {:embed_many, texts}, @load_timeout + @inference_timeout)
   end
 
+  # ---- warm path ----
+
+  @doc """
+  Synchronously warm the model. Loads + builds the Nx.Serving so the next
+  embed/2 call is hot (~50-100ms) instead of cold (~5-30s).
+
+  Returns `:ok` when the model is loaded, `{:error, reason}` if loading
+  failed. Safe to call repeatedly — subsequent calls are no-ops once the
+  serving is built.
+  """
+  @spec warm() :: :ok | {:error, term()}
+  def warm do
+    GenServer.call(__MODULE__, :warm, @load_timeout)
+  end
+
+  @doc """
+  Spawn a background Task to warm the model. Returns immediately. Useful
+  during application boot — we don't want to block startup for the model
+  load, but we DO want the first chat to be fast.
+
+  The Task logs success/failure but doesn't link to the caller, so a
+  failed warm doesn't crash the supervisor.
+  """
+  @spec warm_async() :: pid()
+  def warm_async do
+    spawn(fn ->
+      require Logger
+      Logger.info("Tracy.Memory.Embeddings.Nomic: pre-warming model in background...")
+
+      case warm() do
+        :ok ->
+          Logger.info("Tracy.Memory.Embeddings.Nomic: model warm, first chat will be fast")
+
+        {:error, reason} ->
+          Logger.warning("Tracy.Memory.Embeddings.Nomic: warm failed — #{inspect(reason)}; first embed call will pay the load tax")
+      end
+    end)
+  end
+
+  @doc """
+  Is the model loaded and ready? Cheap check (no DB, no inference) —
+  the dock UI can use this to show a "still warming" affordance if Matt
+  beats the prewarm task.
+  """
+  @spec warm?() :: boolean()
+  def warm? do
+    case GenServer.call(__MODULE__, :warm_status, 1_000) do
+      :warm -> true
+      _ -> false
+    end
+  catch
+    :exit, _ -> false
+  end
+
   # ---- GenServer ----
 
   @doc false
@@ -72,6 +126,18 @@ defmodule Tracy.Memory.Embeddings.Nomic do
   end
 
   @impl GenServer
+  def handle_call(:warm, _from, state) do
+    case ensure_serving(state) do
+      {:ok, state} -> {:reply, :ok, state}
+      {:error, _} = err -> {:reply, err, state}
+    end
+  end
+
+  def handle_call(:warm_status, _from, state) do
+    status = if state.serving, do: :warm, else: :cold
+    {:reply, status, state}
+  end
+
   def handle_call({:embed, text}, _from, state) do
     case ensure_serving(state) do
       {:ok, state} ->

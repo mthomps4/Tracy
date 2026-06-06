@@ -46,3 +46,6 @@ config :tracy, Tracy.Memory.Embeddings,
 # Tests stay on the BinaryBackend — EXLA isn't needed for deterministic
 # Stub vectors, and BinaryBackend boots instantly.
 config :nx, default_backend: Nx.BinaryBackend
+
+# No prewarm in test — Stub doesn't need a model.
+config :tracy, :prewarm_embedder, false

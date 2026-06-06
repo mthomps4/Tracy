@@ -68,9 +68,27 @@ defmodule TracyWeb.ChatDockLive do
       |> assign(:pinned_project, nil)
       |> assign(:listening?, false)
       |> assign(:cost, Billing.sdk_pool_status())
+      |> assign(:warm?, embedder_warm?())
       |> stream(:messages, messages, dom_id: &"dock-msg-#{&1.index}")
 
+    # Poll embedder warm status every 2s until it flips, so the dock
+    # can show "still loading the brain" if Matt is faster than the
+    # prewarm task.
+    if connected?(socket) and not socket.assigns.warm? do
+      Process.send_after(self(), :poll_warm, 2_000)
+    end
+
     {:ok, socket, layout: false}
+  end
+
+  defp embedder_warm? do
+    try do
+      Tracy.Memory.Embeddings.Nomic.warm?()
+    rescue
+      _ -> true   # If the embedder isn't running (Stub provider), pretend warm
+    catch
+      :exit, _ -> true
+    end
   end
 
   # ---- events ----
@@ -385,6 +403,21 @@ defmodule TracyWeb.ChatDockLive do
     )
   end
 
+  # Poll the embedder warm status until it flips to true, then stop
+  # polling. Used for the subtle "still warming" indicator in the dock
+  # header.
+  def handle_info(:poll_warm, socket) do
+    warm? = embedder_warm?()
+
+    socket = assign(socket, :warm?, warm?)
+
+    if not warm? do
+      Process.send_after(self(), :poll_warm, 2_000)
+    end
+
+    {:noreply, socket}
+  end
+
   def handle_info(_, socket), do: {:noreply, socket}
 
   # ---- view ----
@@ -434,10 +467,13 @@ defmodule TracyWeb.ChatDockLive do
             </span>
             <div>
               <p class="chat-dock__header-name">Tracy</p>
-              <p :if={@pinned_project} class="chat-dock__header-sub">
+              <p :if={!@warm?} class="chat-dock__header-sub chat-dock__header-sub--warming">
+                warming memory…
+              </p>
+              <p :if={@warm? && @pinned_project} class="chat-dock__header-sub">
                 pinned · {@pinned_project}
               </p>
-              <p :if={!@pinned_project} class="chat-dock__header-sub">
+              <p :if={@warm? && !@pinned_project} class="chat-dock__header-sub">
                 {format_cost(@cost)}
               </p>
             </div>
