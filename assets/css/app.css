@@ -43,11 +43,11 @@
   --color-primary-content: oklch(15% 0.04 240);
 
   /* Spider red */
-  --color-secondary: oklch(58% 0.24 25);
+  --color-secondary: oklch(55% 0.24 25);     /* D-9.1: was 58% → secondary-content 4.90:1 ✅ AA */
   --color-secondary-content: oklch(98% 0.02 25);
 
   /* Web blue */
-  --color-accent: oklch(55% 0.20 250);
+  --color-accent: oklch(62% 0.20 250);       /* D-9.1: was 55% → 3.78:1 on base-100 ✅ UI */
   --color-accent-content: oklch(98% 0.02 250);
 
   /* neutral / info / success / warning / error */
@@ -60,7 +60,7 @@
   --color-warning: oklch(75% 0.18 75);
   --color-warning-content: oklch(15% 0.04 240);
   --color-error: oklch(60% 0.24 25);
-  --color-error-content: oklch(98% 0.02 25);
+  --color-error-content: oklch(15% 0.04 240); /* D-9.1: was 98% white → 4.73:1 ✅ AA (matches warn/info/success pattern) */
 
   --radius-selector: 0.375rem;
   --radius-field: 0.375rem;
@@ -86,8 +86,8 @@
   --color-base-300: oklch(90% 0.012 230);
   --color-base-content: oklch(20% 0.04 240);
 
-  --color-primary: oklch(55% 0.18 200);
-  --color-primary-content: oklch(98% 0.02 200);
+  --color-primary: oklch(48% 0.18 200);      /* D-9.1: was 55% → 4.96:1 on base-100 ✅ AA text + button */
+  --color-primary-content: oklch(98% 0.02 200); /* unchanged — 4.93:1 on new primary ✅ */
   --color-secondary: oklch(55% 0.24 25);
   --color-secondary-content: oklch(98% 0.02 25);
   --color-accent: oklch(45% 0.20 250);
@@ -95,11 +95,11 @@
 
   --color-neutral: oklch(40% 0.025 240);
   --color-neutral-content: oklch(98% 0.02 240);
-  --color-info: oklch(55% 0.16 220);
+  --color-info: oklch(50% 0.16 220);         /* D-9.1: was 55% → badge text 6.14:1 ✅ AA */
   --color-info-content: oklch(98% 0.02 220);
-  --color-success: oklch(55% 0.18 155);
+  --color-success: oklch(48% 0.18 155);      /* D-9.1: was 55% → badge text 5.76:1 ✅ AA */
   --color-success-content: oklch(98% 0.02 155);
-  --color-warning: oklch(70% 0.18 75);
+  --color-warning: oklch(60% 0.18 75);       /* D-9.1: was 70% → 4.81:1 on base-100 ✅ AA (was 2.96:1 FAIL) */
   --color-warning-content: oklch(15% 0.04 75);
   --color-error: oklch(55% 0.24 25);
   --color-error-content: oklch(98% 0.02 25);
@@ -165,4 +165,997 @@ body {
 }
 .web-pulse {
   animation: web-pulse 2.2s ease-in-out infinite;
+}
+
+/* -------------------------------------------------------------------
+ * Loading & empty-state utilities — D-1.3b
+ * Spec: workspaces/plans/.../loading/spinner-spec.md
+ * ------------------------------------------------------------------- */
+
+/* Inline spinner — border-arc, four sizes */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 3px solid color-mix(in oklab, var(--color-primary) 20%, transparent);
+  border-top-color: var(--color-primary);
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+.spinner-xs { width: 14px; height: 14px; border-width: 2px; }
+.spinner-sm { width: 20px; height: 20px; border-width: 2.5px; }
+.spinner-lg { width: 40px; height: 40px; border-width: 4px; }
+
+/* Section skeleton — pulsing placeholder */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 0.22; }
+}
+
+.skeleton {
+  border-radius: var(--radius-field);
+  background: var(--color-base-300);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+/* Dot-pulse — agent typing indicator */
+@keyframes dot-bounce {
+  0%, 80%, 100% { transform: translateY(0);   opacity: 0.4; }
+  40%           { transform: translateY(-5px); opacity: 1;   }
+}
+
+.dot-pulse {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.dot-pulse span {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  animation: dot-bounce 1.2s ease-in-out infinite;
+}
+.dot-pulse span:nth-child(2) { animation-delay: 0.2s; }
+.dot-pulse span:nth-child(3) { animation-delay: 0.4s; }
+
+/* Page-level overlay — full-viewport session bootstrap screen */
+.page-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: color-mix(in oklab, var(--color-base-100) 88%, transparent);
+  backdrop-filter: blur(8px);
+  /* Starts invisible; JS hook adds .visible after 300 ms */
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.page-loading.visible { opacity: 1; }
+
+.page-loading-label {
+  font-size: 0.875rem;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+  letter-spacing: 0.04em;
+}
+
+/* ─── D-2.1a Plan List View ─────────────────────────────────────────────── */
+
+/* Mini cost bar — 3px strip below plan meta row */
+.plan-cost-bar {
+  height: 3px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+  margin-top: 5px;
+}
+.plan-cost-fill { height: 100%; border-radius: 9999px; }
+.plan-cost-fill.cost-good   { background: var(--color-success); }
+.plan-cost-fill.cost-warn   { background: var(--color-warning); }
+.plan-cost-fill.cost-danger { background: var(--color-error); }
+
+/* Inline cost display (e.g. "$0.18/$0.50") */
+.cost-inline {
+  font-size: 0.625rem; /* 10px */
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+}
+.cost-inline.cost-good   { color: var(--color-success); }
+.cost-inline.cost-warn   { color: var(--color-warning); }
+.cost-inline.cost-danger { color: var(--color-error); }
+
+/* Reply CTA — Needs Input plans only */
+.reply-btn {
+  font-size: 0.625rem;
+  font-weight: 700;
+  color: var(--color-warning);
+  background: color-mix(in oklab, var(--color-warning) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--color-warning) 25%, transparent);
+  border-radius: 4px;
+  padding: 2px 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 100ms;
+  flex-shrink: 0;
+}
+.reply-btn:hover {
+  background: color-mix(in oklab, var(--color-warning) 22%, transparent);
+}
+
+/* Role badge — uppercase pill with role-specific color */
+.badge-role {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.badge-role.role-engineer   { background: color-mix(in oklab, var(--color-accent) 18%, transparent);    color: #7b9dff; }
+.badge-role.role-designer   { background: color-mix(in oklab, var(--color-primary) 15%, transparent);   color: var(--color-primary); }
+.badge-role.role-researcher { background: color-mix(in oklab, var(--color-info) 15%, transparent);      color: var(--color-info); }
+.badge-role.role-pm         { background: color-mix(in oklab, var(--color-secondary) 15%, transparent); color: #f08080; }
+.badge-role.role-reviewer   { background: color-mix(in oklab, var(--color-warning) 15%, transparent);   color: var(--color-warning); }
+.badge-role.role-note_taker { background: color-mix(in oklab, var(--color-neutral) 40%, transparent);   color: var(--color-neutral-content); }
+.badge-role.role-operator   { background: color-mix(in oklab, var(--color-success) 15%, transparent);   color: var(--color-success); }
+.badge-role.role-scout      { background: color-mix(in oklab, var(--color-neutral) 40%, transparent);   color: var(--color-neutral-content); }
+
+/* Needs-input card — warning tint + left border */
+.plan-card-needs-input {
+  border-left: 2px solid color-mix(in oklab, var(--color-warning) 50%, transparent);
+  background: color-mix(in oklab, var(--color-warning) 4%, transparent);
+}
+
+/* Done / Canceled card — muted */
+.plan-card-done     { opacity: 0.62; }
+.plan-card-canceled { opacity: 0.5; }
+
+/* Global cost meter bar (SDK pool, weekly quota) */
+.cost-meter {
+  flex: 1;
+  background: var(--color-base-300);
+  border-radius: var(--radius-field);
+  padding: 6px 8px;
+  cursor: pointer;
+  transition: background 100ms;
+}
+.cost-meter:hover {
+  background: color-mix(in oklab, var(--color-base-300) 85%, white);
+}
+.cost-meter-label {
+  font-size: 0.5rem; /* 8px */
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--color-base-content) 40%, transparent);
+  margin-bottom: 4px;
+}
+.cost-meter-track {
+  height: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 9999px;
+  overflow: hidden;
+  margin-bottom: 3px;
+}
+.cost-meter-fill { height: 100%; border-radius: 9999px; }
+.cost-meter-fill.cost-good   { background: var(--color-success); }
+.cost-meter-fill.cost-warn   { background: var(--color-warning); }
+.cost-meter-fill.cost-danger { background: var(--color-error); }
+.cost-meter-value {
+  font-size: 0.5625rem; /* 9px */
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
+}
+
+/* ─── D-4.1 Cost bar tooltip ─────────────────────────────────────────────── */
+/* CSS-only tooltip for the sticky cost bar strip.
+ * Appears below the bar on hover or keyboard focus.
+ * .cost-bar-tooltip must be a DIRECT child of .group.relative.
+ * The bar strip's backdrop-filter creates a stacking context — z-50 is
+ * relative to it, so the tooltip naturally appears above page content below.
+ *
+ * Arrow points UPWARD toward the bar (border-left + border-top rotated 45°).
+ */
+.cost-bar-tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  z-index: 50;
+  pointer-events: none;
+  min-width: 160px;
+  padding: 8px 12px 9px;
+  border-radius: var(--radius-box);
+  border: 1.5px solid var(--color-base-300);
+  background: var(--color-base-200);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.30), 0 2px 6px rgba(0, 0, 0, 0.14);
+  font-size: 0.6875rem; /* 11px */
+  line-height: 1.55;
+  color: var(--color-base-content);
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateX(-50%) translateY(-3px);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.group:hover > .cost-bar-tooltip,
+.group:focus-within > .cost-bar-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.cost-bar-tooltip-label {
+  display: block;
+  font-size: 0.5625rem;     /* 9px */
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
+  margin-bottom: 3px;
+}
+
+/* Arrow pointing upward toward the bar */
+.cost-bar-tooltip-arrow {
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  background: var(--color-base-200);
+  border-left: 1.5px solid var(--color-base-300);
+  border-top: 1.5px solid var(--color-base-300);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+/* -------------------------------------------------------------------
+ * D-3.1 Navigation — sidebar + bottom tab bar
+ * Spec: workspaces/plans/.../navigation/nav-interaction-spec.md
+ * ------------------------------------------------------------------- */
+
+/* ── Desktop sidebar ──────────────────────────────────────────────── */
+.app-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--color-base-200);
+  border-right: 1px solid color-mix(in oklch, white 7%, transparent);
+  display: none;           /* hidden on mobile */
+  flex-direction: column;
+  height: 100dvh;
+  position: sticky;
+  top: 0;
+  overflow-y: auto;
+}
+
+@media (min-width: 768px) {
+  .app-sidebar { display: flex; }
+}
+
+/* Sidebar nav item — shared base */
+.sidebar-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 11px 12px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
+  transition: background 120ms ease, color 120ms ease;
+  cursor: pointer;
+  text-decoration: none;
+  outline-offset: 2px;
+}
+
+.sidebar-nav-item:hover {
+  background: color-mix(in oklch, white 4%, transparent);
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
+}
+
+.sidebar-nav-item:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--color-primary) 50%, transparent);
+}
+
+/* Active state: tinted background + left accent bar */
+.sidebar-nav-item.active {
+  background: color-mix(in oklab, var(--color-primary) 10%, transparent);
+  color: var(--color-primary);
+}
+
+.sidebar-nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--color-primary);
+  transition: opacity 100ms ease-out;
+}
+
+/* ── Mobile bottom tab bar ────────────────────────────────────────── */
+.bottom-tab-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: color-mix(in oklch, var(--color-base-200) 95%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid color-mix(in oklch, white 9%, transparent);
+  display: flex;
+  align-items: stretch;
+  z-index: 100;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@media (min-width: 768px) {
+  .bottom-tab-bar { display: none; }
+}
+
+/* Individual tab item */
+.tab-item {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: color-mix(in oklab, var(--color-base-content) 35%, transparent);
+  font-size: 0.625rem; /* 10px */
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 150ms ease-out;
+  outline-offset: -2px;
+}
+
+.tab-item:hover {
+  color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
+}
+
+.tab-item:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--color-primary) 50%, transparent);
+}
+
+/* Active tab: primary colour + top-of-bar pill indicator */
+.tab-item.active {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.tab-item.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 32px;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--color-primary);
+}
+
+/* ── Content area offset ──────────────────────────────────────────── */
+
+/* Mobile: push content above the fixed tab bar */
+.main-content {
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 768px) {
+  /* Desktop: sidebar is sticky, no bottom bar, so no padding needed */
+  .main-content { padding-bottom: 1.5rem; }
+}
+
+/* ── Live badge (active workers dot) ─────────────────────────────── */
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: color-mix(in oklab, var(--color-success) 20%, transparent);
+  color: var(--color-success);
+  border-radius: 9999px;
+  padding: 1px 5px;
+  font-size: 0.5625rem; /* 9px */
+  font-weight: 600;
+}
+
+.live-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-success);
+  animation: live-pulse 2s ease infinite;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+/* ── Nav badge (plan count / unread count) ────────────────────────── */
+.nav-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: var(--color-primary-content);
+  font-size: 0.5625rem; /* 9px */
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+/* ── Master/Detail layout ─────────────────────────────────────────────
+ * Spec: workspaces/plans/.../master-detail/master-detail-spec.md §G
+ * Three patterns keyed to viewport width:
+ *   < 768px    — mobile push navigation (two .screen divs slide left/right)
+ *   768–1279px — tablet slide-out panel over the list
+ *   ≥ 1280px   — desktop dual-pane (list pane + detail pane side-by-side)
+ * ──────────────────────────────────────────────────────────────────── */
+
+/* Container for all three modes */
+.plans-shell {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* List pane (desktop dual-pane only) */
+.plan-list-pane {
+  display: none;          /* hidden on mobile/tablet */
+  width: 360px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  border-right: 1px solid color-mix(in oklch, white 6%, transparent);
+}
+
+@media (min-width: 1280px) {
+  .plan-list-pane { display: flex; flex-direction: column; }
+  .plan-detail-pane { flex: 1; overflow-y: auto; }
+}
+
+/* Selected card state (desktop list pane) */
+.plan-card.selected {
+  border-left: 3px solid var(--color-primary);
+  background: color-mix(in oklch, var(--color-primary) 8%, transparent);
+  transition: background 150ms ease, border-color 150ms ease;
+}
+.plan-card.selected .plan-chevron {
+  display: none;   /* no arrow — detail is already shown */
+}
+
+/* Detail pane fade transition (desktop) */
+.detail-pane-content {
+  transition: opacity 150ms ease;
+}
+.detail-pane-content.loading {
+  opacity: 0;
+}
+
+/* ── Mobile push navigation ──────────────────────────────────────────── */
+
+.mobile-screen-stack {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.screen {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  will-change: transform;
+  background: var(--color-base-100);
+  transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.screen-list {
+  transform: translateX(0);
+  z-index: 1;
+}
+.screen-list.pushed {
+  transform: translateX(-25%);
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.screen-detail {
+  transform: translateX(100%);
+  z-index: 2;
+}
+.screen-detail.visible {
+  transform: translateX(0);
+}
+.screen-detail.popping {
+  transform: translateX(100%);
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
+  transition-duration: 280ms;
+}
+
+/* Depth shadow overlay on list during push */
+.screen-list::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0);
+  pointer-events: none;
+  transition: background 300ms ease;
+  z-index: 10;
+}
+.screen-list.pushed::after {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+@media (min-width: 768px) {
+  .mobile-screen-stack { display: none; }
+}
+
+/* ── Tablet slide-out panel ──────────────────────────────────────────── */
+
+.panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0);
+  z-index: 59;
+  transition: background 200ms ease;
+  pointer-events: none;
+  display: none;
+}
+.panel-backdrop.active {
+  background: rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+}
+
+.slide-panel {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  width: min(560px, 78vw);
+  background: var(--color-base-200);
+  border-left: 1px solid rgba(255,255,255,0.08);
+  box-shadow: -8px 0 40px rgba(0, 0, 0, 0.5);
+  z-index: 60;
+  overflow-y: auto;
+  transform: translateX(100%);
+  transition: transform 280ms cubic-bezier(0.4, 0, 0.2, 1);
+  display: none;
+}
+.slide-panel.open {
+  transform: translateX(0);
+}
+.slide-panel.closing {
+  transform: translateX(100%);
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
+  transition-duration: 220ms;
+}
+
+@media (min-width: 768px) and (max-width: 1279px) {
+  .panel-backdrop { display: block; }
+  .slide-panel { display: flex; flex-direction: column; }
+}
+@media (min-width: 1280px) {
+  .panel-backdrop, .slide-panel { display: none; }
+}
+
+/* -------------------------------------------------------------------
+ * D-5.1 Auth page layout
+ * Spec: workspaces/plans/.../auth/auth-spec.md
+ * ------------------------------------------------------------------- */
+
+/* Full-viewport centering wrapper for all unauthenticated pages */
+.auth-page-wrapper {
+  min-height: calc(100svh - 4rem);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1.5rem 4rem;
+}
+
+/* Logo + wordmark lockup above the card */
+.auth-logo-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 2rem;
+  gap: 0;
+}
+
+.auth-wordmark {
+  margin-top: 0.75rem;
+  font-size: 1.375rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.auth-tagline {
+  margin-top: 0.25rem;
+  font-size: 0.625rem;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--color-base-content);
+  opacity: 0.4;
+}
+
+/* Mobile: no card chrome; Desktop (≥768px): elevated card */
+.auth-card {
+  width: 100%;
+  max-width: 360px;
+}
+
+@media (min-width: 768px) {
+  .auth-card {
+    background-color: var(--color-base-200);
+    border: 1.5px solid rgba(255, 255, 255, 0.10);
+    border-radius: var(--radius-box);
+    padding: 2rem;
+    box-shadow: 0 8px 48px rgba(0, 0, 0, 0.35);
+  }
+}
+
+/* Section heading — used inside Settings page */
+.section-heading {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
+  margin-bottom: 1rem;
+  padding-bottom: 0.625rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* -------------------------------------------------------------------
+ * D-7.1 Micro-interactions & Transitions
+ * Spec: workspaces/plans/.../transitions/transition-spec.md
+ * ------------------------------------------------------------------- */
+
+/* ── Timing scale tokens ─────────────────────────────────────────── */
+:root {
+  --t-press:        80ms ease-out;
+  --t-hover:        100ms ease-out;
+  --t-micro:        100ms ease-out;
+  --t-tooltip:      140ms ease;
+  --t-card-select:  150ms ease;
+  --t-detail-fade:  150ms ease;
+  --t-tab-color:    150ms ease-out;
+  --t-page-overlay: 200ms ease;
+  --t-backdrop:     200ms ease;
+  --t-modal-appear: 200ms cubic-bezier(0, 0, 0.2, 1);
+  --t-toast:        250ms cubic-bezier(0, 0, 0.2, 1);
+  --t-push-fwd:     300ms cubic-bezier(0.4, 0, 0.2, 1);
+  --t-push-back:    280ms cubic-bezier(0.4, 0, 1, 1);
+  --t-panel-open:   280ms cubic-bezier(0.4, 0, 0.2, 1);
+  --t-panel-close:  220ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* ── Reduced motion — collapse all transitions ───────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  /* Static spinner (no rotation) */
+  .spinner { animation: none; border-top-color: var(--color-primary); opacity: 0.6; }
+
+  /* No push parallax */
+  .screen-list.pushed { transform: none; }
+
+  /* Skeleton: no pulse, just solid placeholder */
+  .skeleton { animation: none; opacity: 0.35; }
+
+  /* Dot-pulse: show static dots */
+  .dot-pulse span { animation: none; opacity: 0.6; }
+}
+
+/* ── Button states — D-7.1 §3.1 ─────────────────────────────────── */
+/* daisyUI's .btn already provides background and sizing;
+ * these augment with Tracy's transition and press states.
+ */
+.btn {
+  transition:
+    filter var(--t-hover),
+    transform var(--t-press),
+    opacity var(--t-hover),
+    box-shadow var(--t-hover);
+}
+
+.btn:hover:not(:disabled):not([aria-disabled="true"]) {
+  filter: brightness(1.12);
+}
+
+.btn:active:not(:disabled):not([aria-disabled="true"]) {
+  filter: brightness(0.88);
+  transform: translateY(1px);
+}
+
+.btn:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--color-primary) 50%, transparent);
+  outline-offset: 2px;
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.38;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Loading spinner via ::after pseudo-element */
+.btn-loading {
+  pointer-events: none;
+  position: relative;
+}
+.btn-loading::after {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in oklab, currentColor 30%, transparent);
+  border-top-color: currentColor;
+  animation: spin 0.7s linear infinite;
+  margin-left: 6px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+/* ── Form input transitions — D-7.1 §3.2 ────────────────────────── */
+/* Tracy's inputs use daisyUI's .input + optional state modifiers.
+ * These add the D-7.1 hover/focus glow and state transitions.
+ */
+.input,
+.textarea,
+.select {
+  transition: border-color var(--t-hover), box-shadow var(--t-hover);
+}
+
+.input:hover:not(:disabled):not(:focus),
+.textarea:hover:not(:disabled):not(:focus),
+.select:hover:not(:disabled):not(:focus) {
+  border-color: color-mix(in oklab, var(--color-base-content) 25%, transparent);
+}
+
+.input:focus,
+.textarea:focus,
+.select:focus {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-primary) 15%, transparent);
+}
+
+.input.input-success,
+.textarea.textarea-success {
+  border-color: var(--color-success);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-success) 12%, transparent);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.input.input-error,
+.textarea.textarea-error {
+  border-color: var(--color-error);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-error) 12%, transparent);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+/* Error message slide-in animation */
+.field-error-msg {
+  transform: translateY(-4px);
+  opacity: 0;
+  animation: error-appear 150ms ease-out forwards;
+}
+
+@keyframes error-appear {
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* ── Plan card interactive states — D-7.1 §3.3 ───────────────────── */
+.plan-card-interactive {
+  cursor: pointer;
+  transition:
+    background var(--t-card-select),
+    border-color var(--t-card-select),
+    transform var(--t-press),
+    box-shadow var(--t-press);
+}
+
+.plan-card-interactive:hover {
+  background: color-mix(in oklab, var(--color-base-300) 60%, var(--color-base-200));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  transition-duration: 150ms;
+}
+
+.plan-card-interactive:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* ── Modal / Dialog — D-7.1 §3.6 ────────────────────────────────── */
+/* Augment daisyUI's .modal-box with a scale-in appear animation */
+.modal-box {
+  transform: scale(0.96);
+  opacity: 0;
+  transition: opacity var(--t-modal-appear), transform var(--t-modal-appear);
+}
+
+.modal:where(:not(:has([hidden]))) .modal-box,
+.modal[open] .modal-box,
+.modal-open .modal-box {
+  transform: scale(1);
+  opacity: 1;
+}
+
+/* Reduced motion: disable scale */
+@media (prefers-reduced-motion: reduce) {
+  .modal-box { transform: none; }
+}
+
+/* ── Toast / Alert notifications — D-7.1 §3.7 ───────────────────── */
+/* Top-right slide-in from the right edge */
+.toast-enter {
+  animation: toast-slide-in 250ms cubic-bezier(0, 0, 0.2, 1) forwards;
+}
+
+.toast-exit {
+  animation: toast-slide-out 150ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes toast-slide-in {
+  from { transform: translateX(calc(100% + 1rem)); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes toast-slide-out {
+  from { transform: translateX(0); opacity: 1; }
+  to   { transform: translateX(calc(100% + 1rem)); opacity: 0; }
+}
+
+/* Bottom variant (mobile) */
+.toast-bottom-enter {
+  animation: toast-bottom-in 250ms cubic-bezier(0, 0, 0.2, 1) forwards;
+}
+
+@keyframes toast-bottom-in {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+/* ── Dropdown / Context menu — D-7.1 §3.8 ───────────────────────── */
+.dropdown-menu {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.97);
+  pointer-events: none;
+  transition: opacity 150ms ease-out, transform 150ms ease-out;
+  transform-origin: top center;
+}
+
+.dropdown-menu.open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.dropdown-item {
+  transition: background var(--t-press);
+}
+
+.dropdown-item:hover {
+  background: var(--color-base-300);
+}
+
+/* ── Skeleton → Content swap — D-7.1 §3.9 ───────────────────────── */
+.content-swap-enter {
+  opacity: 0;
+  animation: content-appear 200ms ease-out forwards;
+}
+
+/* ── Utility animations ──────────────────────────────────────────── */
+@keyframes content-appear {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+/* Fade-in helpers */
+.fade-in      { animation: content-appear 200ms ease-out both; }
+.fade-in-fast { animation: content-appear 100ms ease-out both; }
+
+/* Slide-up entry — subtle for lists/cards */
+.slide-up-in { animation: slide-up 200ms ease-out both; }
+
+/* -------------------------------------------------------------------
+ * D-8.1 Responsive Grid & Touch-Friendly Sizing
+ * Spec: workspaces/plans/.../responsive-grid/grid-spec.md
+ * ------------------------------------------------------------------- */
+
+/* ── Breakpoint custom properties (reference values) ─────────────── */
+:root {
+  --bp-tablet:  481px;
+  --bp-desktop: 769px;
+  --bp-wide:    1280px;
+}
+
+/* ── Plan list grid ──────────────────────────────────────────────── */
+/* Mobile (base): single column, 8px gap */
+.plan-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  padding: 0 16px;
+}
+
+/* Tablet (481px+): 2 columns */
+@media (min-width: 481px) {
+  .plan-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    padding: 0 20px;
+  }
+}
+
+/* Desktop (769px+): 3 columns */
+@media (min-width: 769px) {
+  .plan-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    padding: 0 24px;
+  }
+}
+
+/* Desktop wide (1280px+): cap width */
+@media (min-width: 1280px) {
+  .plan-grid {
+    max-width: 1240px;
+    margin-inline: auto;
+  }
+}
+
+/* ── Touch target utilities — D-8.1 §3.3 ────────────────────────── */
+@layer components {
+  /* 44×44px minimum hit zone — wrap any small interactive element */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Icon button: 44px hit zone around a 20px icon via 12px padding */
+  .icon-btn {
+    padding: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    min-width: 44px;
+  }
 }
