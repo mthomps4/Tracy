@@ -104,6 +104,83 @@ defmodule Tracy.Workers.ClaudeTest do
     end
   end
 
+  describe "extract_spawned_tasks/1 — Proposed Tasks parser" do
+    test "parses a flat list of role + title + brief tuples" do
+      text = """
+      Some preamble.
+
+      ## Proposed Tasks
+      - [designer] Sketch the hero illustration — 3 directions, SVG
+      - [engineer] Wire the landing-page hero into HEEx — match the SVG
+
+      More text below.
+      """
+
+      tasks = Claude.extract_spawned_tasks(text)
+      assert length(tasks) == 2
+      assert Enum.at(tasks, 0).role == "designer"
+      assert Enum.at(tasks, 0).title =~ "Sketch the hero"
+      assert Enum.at(tasks, 1).role == "engineer"
+      assert Enum.all?(tasks, &(&1.depends_on == nil))
+    end
+
+    test "captures `depends-on: this` on the line below a task" do
+      text = """
+      ## Proposed Tasks
+      - [engineer] Implement the mockup
+        depends-on: this
+      """
+
+      [task] = Claude.extract_spawned_tasks(text)
+      assert task.role == "engineer"
+      assert task.depends_on == "this"
+    end
+
+    test "captures `depends-on: <task title>` for sibling chaining" do
+      text = """
+      ## Proposed Tasks
+      - [engineer] Implement the mockup — port the SVG to HEEx
+      - [reviewer] Verify the implementation matches the brief
+        depends-on: Implement the mockup
+      """
+
+      tasks = Claude.extract_spawned_tasks(text)
+      assert length(tasks) == 2
+      assert Enum.at(tasks, 0).depends_on == nil
+      assert Enum.at(tasks, 1).depends_on == "Implement the mockup"
+    end
+
+    test "stops at the next ## heading and ignores trailing content" do
+      text = """
+      ## Proposed Tasks
+      - [designer] One
+
+      ## Summary
+      - [whatever] this should NOT be parsed as a task
+      """
+
+      [task] = Claude.extract_spawned_tasks(text)
+      assert task.role == "designer"
+      assert task.title == "One"
+    end
+
+    test "returns [] when there's no Proposed Tasks block" do
+      assert Claude.extract_spawned_tasks("just a summary, no proposals") == []
+    end
+
+    test "ignores depends-on lines without a parent task" do
+      text = """
+      ## Proposed Tasks
+        depends-on: this
+      - [engineer] Real task
+      """
+
+      [task] = Claude.extract_spawned_tasks(text)
+      assert task.role == "engineer"
+      assert task.depends_on == nil
+    end
+  end
+
   describe "build_prompt/2 — commit discipline" do
     setup do
       task = %Tracy.Plans.Task{

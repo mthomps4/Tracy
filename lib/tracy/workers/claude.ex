@@ -232,6 +232,22 @@ defmodule Tracy.Workers.Claude do
         - [engineer] Another task title — short brief
         - [researcher] etc
 
+    For chained follow-ups, add a `depends-on:` line indented under the
+    task. Two forms are supported:
+
+        ## Proposed Tasks
+        - [engineer] Implement the designer's mockup as a HEEx component
+          depends-on: this   # blocked by the task you're completing
+        - [reviewer] Verify the implementation matches the brief
+          depends-on: Implement the designer's mockup as a HEEx component
+
+    `depends-on: this` is the common case for "after I finish, run this."
+    `depends-on: <task title>` chains to a sibling task by exact title
+    match. Tracy resolves both into the new task's `blocked_by` and the
+    chain takes care of dispatch order. If your current task carries the
+    CEO approval stamp, the spawned chain inherits approval too and
+    runs end-to-end without you re-clicking.
+
     Use roles from this set:
     engineer, designer, researcher, pm, reviewer, note_taker, operator, scout.
 
@@ -498,23 +514,69 @@ defmodule Tracy.Workers.Claude do
     end
   end
 
-  # Parse a `## Proposed Tasks` block of the form:
-  #   - [role] Title — brief
-  # Returns a list of %{role, title, brief}.
-  defp extract_spawned_tasks(text) do
-    case Regex.run(~r/##\s*Proposed\s+Tasks\s*\n((?:\s*[-*]\s*\[[^\]]+\][^\n]*\n?)+)/i, text) do
-      [_, block] ->
-        block
-        |> String.split("\n")
-        |> Enum.map(&parse_proposed_line/1)
-        |> Enum.reject(&is_nil/1)
+  @doc """
+  Parse a worker's assistant text and return any tasks proposed in a
+  `## Proposed Tasks` block. Each task is a bullet line:
 
-      _ ->
-        []
+      - [role] Title — brief
+
+  optionally followed by an indented `depends-on:` line carrying either
+  the literal `this` (chain after the spawning task) or another task's
+  title:
+
+      - [engineer] Implement the mockup
+        depends-on: this
+
+  Returns a list of `%{role, title, brief, depends_on}`. Public so the
+  parsing logic can be unit-tested without driving the full SDK loop.
+  """
+  @spec extract_spawned_tasks(String.t()) :: [map()]
+  def extract_spawned_tasks(text) do
+    text
+    |> extract_proposed_block()
+    |> parse_proposed_block()
+  end
+
+  defp extract_proposed_block(text) do
+    # Capture everything from the heading to the next blank line, next ##
+    # heading, or end of text. /s makes . match newlines; lazy match keeps
+    # us from greedy-eating subsequent sections.
+    case Regex.run(~r/##\s*Proposed\s+Tasks\s*\n(.+?)(?=\n\s*\n|\n##|\z)/is, text) do
+      [_, block] -> block
+      _ -> ""
     end
   end
 
-  defp parse_proposed_line(line) do
+  defp parse_proposed_block(""), do: []
+
+  defp parse_proposed_block(block) do
+    # Fold over lines: a task line starts a new entry; an indented
+    # `depends-on:` line under a task adds the ref to the current entry;
+    # anything else is ignored. Final task gets flushed at end.
+    {acc, last} =
+      block
+      |> String.split("\n")
+      |> Enum.reduce({[], nil}, fn line, {acc, current} ->
+        case {parse_task_line(line), current && parse_depends_on_line(line)} do
+          {task, _} when not is_nil(task) ->
+            new_acc = if current, do: [current | acc], else: acc
+            {new_acc, task}
+
+          {nil, dep} when not is_nil(dep) ->
+            {acc, Map.put(current, :depends_on, dep)}
+
+          _ ->
+            {acc, current}
+        end
+      end)
+
+    finalised =
+      if last, do: [last | acc], else: acc
+
+    Enum.reverse(finalised)
+  end
+
+  defp parse_task_line(line) do
     case Regex.run(~r/^\s*[-*]\s*\[([^\]]+)\]\s*(.+)$/, line) do
       [_, role, rest] ->
         # Split title from brief on the first ' — ' (em dash), ' – ' (en dash),
@@ -529,7 +591,7 @@ defmodule Tracy.Workers.Claude do
         role = role |> String.downcase() |> String.trim()
 
         if role in Tracy.Plans.Task.roles() and title != "" do
-          %{role: role, title: title, brief: brief}
+          %{role: role, title: title, brief: brief, depends_on: nil}
         else
           nil
         end
@@ -538,6 +600,16 @@ defmodule Tracy.Workers.Claude do
         nil
     end
   end
+
+  defp parse_depends_on_line(line) do
+    case Regex.run(~r/^\s+depends-on:\s*(.+)$/i, line) do
+      [_, ref] -> ref |> String.trim() |> empty_to_nil()
+      _ -> nil
+    end
+  end
+
+  defp empty_to_nil(""), do: nil
+  defp empty_to_nil(s), do: s
 
   # Strip surrounding markdown bold (** ... **) and trim. Keeps titles
   # readable as list-row entries instead of '**D-1.1a Foo**'.

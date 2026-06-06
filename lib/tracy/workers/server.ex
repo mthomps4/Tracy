@@ -272,43 +272,109 @@ defmodule Tracy.Workers.Server do
   defp insert_spawned_tasks(plan_id, spawned, start_position, parent_task) do
     inherit_approval? = parent_task && Plans.task_ever_approved?(parent_task)
 
-    spawned
-    |> Enum.with_index(start_position + 1)
-    |> Enum.map(fn {task_attrs, position} ->
-      base =
-        task_attrs
-        |> normalize_task_attrs()
-        |> Map.put(:plan_id, plan_id)
-        |> Map.put(:position, position)
+    # First pass: create all spawned tasks with no blocked_by yet. Carry
+    # the original spec alongside the inserted record so we can resolve
+    # `depends-on` references in pass two.
+    inserted_pairs =
+      spawned
+      |> Enum.with_index(start_position + 1)
+      |> Enum.map(fn {task_attrs, position} ->
+        attrs = build_spawn_attrs(task_attrs, plan_id, position, inherit_approval?, parent_task)
+        spec = normalize_spec(task_attrs)
 
-      # Approval inheritance: if the spawning task carried the CEO stamp,
-      # its proposed children launch already-approved with the same
-      # timestamp on metadata. The chain keeps moving without re-asking.
-      attrs =
-        if inherit_approval? do
-          parent_stamp = get_in(parent_task.metadata || %{}, ["approved_at"])
+        case Plans.create_task(attrs) do
+          {:ok, t} ->
+            {spec, t}
 
-          base
-          |> Map.put(:status, "approved")
-          |> Map.put(:metadata, %{"approved_at" => parent_stamp, "inherited_from" => parent_task.id})
-        else
-          Map.put(base, :status, "backlog")
+          {:error, cs} ->
+            require Logger
+            Logger.warning(
+              "Tracy.Workers.Server: failed to insert spawned task — #{inspect(cs.errors)} attrs=#{inspect(Map.take(attrs, [:title, :role]))}"
+            )
+            nil
         end
+      end)
+      |> Enum.reject(&is_nil/1)
 
-      case Plans.create_task(attrs) do
-        {:ok, t} ->
-          t
+    # Second pass: resolve `depends-on` references into blocked_by.
+    # `this` → parent task id; a string → exact title match against the
+    # newly-spawned siblings first, then existing plan tasks.
+    resolved =
+      Enum.map(inserted_pairs, fn {spec, task} ->
+        case resolve_depends_on(spec, parent_task, inserted_pairs, plan_id) do
+          nil ->
+            task
 
-        {:error, cs} ->
-          require Logger
-          Logger.warning(
-            "Tracy.Workers.Server: failed to insert spawned task — #{inspect(cs.errors)} attrs=#{inspect(Map.take(attrs, [:title, :role]))}"
-          )
-          nil
-      end
-    end)
-    |> Enum.reject(&is_nil/1)
+          blocker_id ->
+            case task |> Plans.Task.changeset(%{blocked_by: [blocker_id]}) |> Tracy.Repo.update() do
+              {:ok, updated} -> updated
+              _ -> task
+            end
+        end
+      end)
+
+    resolved
   end
+
+  defp build_spawn_attrs(task_attrs, plan_id, position, inherit_approval?, parent_task) do
+    base =
+      task_attrs
+      |> normalize_task_attrs()
+      |> Map.put(:plan_id, plan_id)
+      |> Map.put(:position, position)
+
+    if inherit_approval? do
+      parent_stamp = get_in(parent_task.metadata || %{}, ["approved_at"])
+
+      base
+      |> Map.put(:status, "approved")
+      |> Map.put(:metadata, %{"approved_at" => parent_stamp, "inherited_from" => parent_task.id})
+    else
+      Map.put(base, :status, "backlog")
+    end
+  end
+
+  # Normalize the raw spec to a map with stringified depends_on (the
+  # worker's report may come back JSON-encoded with string keys, so the
+  # parser's atom-keyed map needs defensive treatment).
+  defp normalize_spec(attrs) do
+    %{
+      title: attrs[:title] || attrs["title"],
+      depends_on: attrs[:depends_on] || attrs["depends_on"]
+    }
+  end
+
+  defp resolve_depends_on(%{depends_on: nil}, _parent, _inserted, _plan_id), do: nil
+  defp resolve_depends_on(%{depends_on: ""}, _parent, _inserted, _plan_id), do: nil
+
+  defp resolve_depends_on(%{depends_on: "this"}, %Tracy.Plans.Task{id: parent_id}, _inserted, _plan_id),
+    do: parent_id
+
+  defp resolve_depends_on(%{depends_on: "this"}, _no_parent, _inserted, _plan_id), do: nil
+
+  defp resolve_depends_on(%{depends_on: title}, _parent, inserted_pairs, plan_id) when is_binary(title) do
+    needle = title |> String.trim() |> String.downcase()
+
+    # Match a sibling spawned in the same batch first
+    sibling_match =
+      Enum.find_value(inserted_pairs, fn {_spec, t} ->
+        if String.downcase(t.title) == needle, do: t.id
+      end)
+
+    cond do
+      sibling_match ->
+        sibling_match
+
+      true ->
+        # Fall back to existing tasks on the same plan
+        case Tracy.Repo.get_by(Tracy.Plans.Task, plan_id: plan_id, title: title) do
+          %Tracy.Plans.Task{id: id} -> id
+          _ -> nil
+        end
+    end
+  end
+
+  defp resolve_depends_on(_, _, _, _), do: nil
 
   # Defensive: when the worker's report came back through JSON (stored on the
   # task) the keys are strings. Atomise so Plans.create_task gets the shape
