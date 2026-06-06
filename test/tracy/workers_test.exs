@@ -196,15 +196,16 @@ defmodule Tracy.WorkersTest do
     # supervised Worker.Server children. The chain *logic* is covered:
     #
     #   - Plans.task_ready?/1 + Plans.tasks_ready_after/1 (plans_test.exs)
+    #   - Plans.approve_task/1 (CEO stamp) is what fan-out filters on
     #   - Workers.Server fan-out scan is invoked on :worker_completed
     #     and rescued so a sandbox failure doesn't crash the parent
     #
     # Manual verification path: create two tasks with the second's
-    # blocked_by pointing at the first + auto_dispatch=true, dispatch
-    # the first, watch the second's Live tab fill in as soon as A's
-    # report lands.
+    # blocked_by pointing at the first, Approve the second (CEO stamp),
+    # then Dispatch the first. Watch the second's Live tab fill in as
+    # soon as A's report lands.
     @tag :skip
-    test "completing a task fires its auto_dispatch=true downstream (integration)" do
+    test "completing a task fires its approved downstream (integration)" do
       flunk("see TODO above — chain logic covered unit-wise; manual verify the wire")
     end
 
@@ -221,9 +222,11 @@ defmodule Tracy.WorkersTest do
           plan_id: plan.id,
           title: "B",
           role: "engineer",
-          blocked_by: [a.id],
-          auto_dispatch: true
+          blocked_by: [a.id]
         })
+
+      # CEO stamp on B so the fan-out includes it
+      {:ok, _approved_b} = Plans.approve_task(b)
 
       # Before A completes, no downstream is "ready"
       assert Plans.tasks_ready_after(a.id) == []
@@ -232,7 +235,7 @@ defmodule Tracy.WorkersTest do
 
       ready = Plans.tasks_ready_after(a.id)
       assert Enum.map(ready, & &1.id) == [b.id]
-      assert Enum.all?(ready, & &1.auto_dispatch)
+      assert Enum.all?(ready, &(&1.status == "approved"))
     end
   end
 

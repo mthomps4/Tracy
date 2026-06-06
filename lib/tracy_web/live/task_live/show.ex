@@ -618,6 +618,7 @@ defmodule TracyWeb.TaskLive.Show do
 
   defp status_label("triage"), do: "Triage"
   defp status_label("backlog"), do: "Backlog"
+  defp status_label("approved"), do: "Approved"
   defp status_label("in_progress"), do: "In Progress"
   defp status_label("in_review"), do: "In Review"
   defp status_label("needs_input"), do: "Needs Input"
@@ -630,6 +631,7 @@ defmodule TracyWeb.TaskLive.Show do
 
   defp status_dot("triage"), do: "bg-base-content/30"
   defp status_dot("backlog"), do: "bg-info"
+  defp status_dot("approved"), do: "bg-primary/60"
   defp status_dot("in_progress"), do: "bg-primary"
   defp status_dot("in_review"), do: "bg-secondary"
   defp status_dot("needs_input"), do: "bg-warning"
@@ -642,6 +644,7 @@ defmodule TracyWeb.TaskLive.Show do
 
   defp status_pill_class("triage"), do: "border-base-300/60 bg-base-200/60 text-base-content/70"
   defp status_pill_class("backlog"), do: "border-info/40 bg-info/10 text-info"
+  defp status_pill_class("approved"), do: "border-primary/40 bg-primary/10 text-primary"
   defp status_pill_class("in_progress"), do: "border-primary/40 bg-primary/10 text-primary"
   defp status_pill_class("in_review"), do: "border-secondary/40 bg-secondary/10 text-secondary"
   defp status_pill_class("needs_input"), do: "border-warning/40 bg-warning/10 text-warning"

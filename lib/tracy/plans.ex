@@ -177,12 +177,44 @@ defmodule Tracy.Plans do
     downstream =
       from(t in Task,
         where: fragment("? = ANY(?)", type(^task_id, :binary_id), t.blocked_by),
-        where: t.status in ["backlog", "triage"]
+        where: t.status in ["backlog", "triage", "approved"]
       )
       |> Repo.all()
 
     Enum.filter(downstream, &task_ready?/1)
   end
+
+  @doc """
+  Stamp the CEO approval on a task: status → "approved", metadata.approved_at
+  → now. Tasks in `approved` status are eligible for chain auto-dispatch
+  the moment their deps clear. Approval also propagates to spawned children
+  (see `Tracy.Workers.Server.insert_spawned_tasks/3`).
+
+  Approval is only meaningful from `backlog` (or `triage`). Tasks already
+  in_progress / done / canceled / failed / paused don't gain anything from
+  being approved — the status takes precedence.
+  """
+  @spec approve_task(Task.t()) :: {:ok, Task.t()} | {:error, Ecto.Changeset.t()}
+  def approve_task(%Task{status: status} = task) when status in ["backlog", "triage"] do
+    metadata =
+      Map.merge(task.metadata || %{}, %{
+        "approved_at" => DateTime.utc_now() |> DateTime.to_iso8601()
+      })
+
+    task
+    |> Task.changeset(%{metadata: metadata})
+    |> Repo.update()
+    |> case do
+      {:ok, updated} -> transition_task(updated, "approved")
+      err -> err
+    end
+  end
+
+  def approve_task(%Task{} = task), do: {:ok, task}
+
+  @doc "True iff the task has ever been approved (metadata.approved_at is set)."
+  def task_ever_approved?(%Task{metadata: %{"approved_at" => _}}), do: true
+  def task_ever_approved?(_), do: false
 
   @doc "Fetch many tasks by id, preserving order. Used by chain UIs."
   def list_tasks(ids) when is_list(ids) do

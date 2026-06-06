@@ -39,7 +39,7 @@ defmodule TracyWeb.PlanLive.Show do
           |> assign(:plan, plan)
           |> assign(:assets, Assets.list_asset_summaries(plan.id))
           |> assign(:show_transition_menu?, false)
-          |> assign(:new_task, %{title: "", role: "engineer", blocked_by: nil, auto_dispatch: false})
+          |> assign(:new_task, %{title: "", role: "engineer", blocked_by: nil})
           |> assign(:task_transition_id, nil)
           |> assign(:new_link, %{filename: "", body: ""})
           |> assign(:active_tab, "tasks")
@@ -91,8 +91,7 @@ defmodule TracyWeb.PlanLive.Show do
      assign(socket, :new_task, %{
        title: params["title"] || "",
        role: params["role"] || "engineer",
-       blocked_by: blank_to_nil(params["blocked_by"]),
-       auto_dispatch: params["auto_dispatch"] == "true"
+       blocked_by: blank_to_nil(params["blocked_by"])
      })}
   end
 
@@ -100,7 +99,6 @@ defmodule TracyWeb.PlanLive.Show do
     title = String.trim(params["title"] || "")
     role = params["role"] || "engineer"
     blocked_by = blank_to_nil(params["blocked_by"])
-    auto_dispatch = params["auto_dispatch"] == "true"
     plan = socket.assigns.plan
 
     if title == "" do
@@ -113,8 +111,7 @@ defmodule TracyWeb.PlanLive.Show do
         title: title,
         role: role,
         position: next_pos,
-        blocked_by: if(blocked_by, do: [blocked_by], else: []),
-        auto_dispatch: auto_dispatch
+        blocked_by: if(blocked_by, do: [blocked_by], else: [])
       }
 
       case Plans.create_task(attrs) do
@@ -123,12 +120,29 @@ defmodule TracyWeb.PlanLive.Show do
 
           {:noreply,
            socket
-           |> assign(:new_task, %{title: "", role: role, blocked_by: nil, auto_dispatch: false})
+           |> assign(:new_task, %{title: "", role: role, blocked_by: nil})
            |> reload_plan()}
 
         {:error, _cs} ->
           {:noreply, put_flash(socket, :error, "Couldn't add that task.")}
       end
+    end
+  end
+
+  def handle_event("approve_task", %{"id" => id}, socket) do
+    task = Enum.find(socket.assigns.plan.tasks, &(&1.id == id))
+
+    if task do
+      case Plans.approve_task(task) do
+        {:ok, _} ->
+          Phoenix.PubSub.broadcast(Tracy.PubSub, "plans", :plans_changed)
+          {:noreply, reload_plan(socket)}
+
+        {:error, _} ->
+          {:noreply, put_flash(socket, :error, "Couldn't approve that task.")}
+      end
+    else
+      {:noreply, socket}
     end
   end
 
@@ -434,7 +448,7 @@ defmodule TracyWeb.PlanLive.Show do
         />
         <div class="mx-1 h-4 w-px bg-base-300/60"></div>
         <.filter_chip
-          :for={status <- ["backlog", "in_progress", "in_review", "needs_input", "blocked", "failed", "paused", "done"]}
+          :for={status <- ["backlog", "approved", "in_progress", "in_review", "needs_input", "blocked", "failed", "paused", "done"]}
           label={status_label(status)}
           value={status}
           current={@filters.status}
@@ -632,8 +646,8 @@ defmodule TracyWeb.PlanLive.Show do
               {status_label(@task.status)}
             </span>
             <span :if={@task.duration_ms} class="tabular-nums">{format_duration(@task.duration_ms)}</span>
-            <span :if={@task.auto_dispatch} class="inline-flex items-center gap-0.5 rounded-full border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-primary/80">
-              <.icon name="hero-bolt-mini" class="size-2.5" /> auto
+            <span :if={@task.status == "approved"} class="inline-flex items-center gap-0.5 rounded-full border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-primary/80" title="CEO stamp — will auto-dispatch when ready">
+              <.icon name="hero-check-badge-mini" class="size-2.5" /> approved
             </span>
             <span :if={brief_preview(@task.brief)} class="hidden truncate normal-case tracking-normal text-base-content/40 sm:block">
               · {brief_preview(@task.brief)}
@@ -655,7 +669,18 @@ defmodule TracyWeb.PlanLive.Show do
         </.link>
 
         <button
-          :if={@task.status in ["backlog", "blocked", "failed", "paused"]}
+          :if={@task.status == "backlog"}
+          phx-click="approve_task"
+          phx-value-id={@task.id}
+          class="btn btn-ghost btn-xs shrink-0"
+          title="Approve — CEO stamp; will auto-dispatch when blockers clear"
+        >
+          <.icon name="hero-check-badge-mini" class="size-3" />
+          <span class="hidden sm:inline">Approve</span>
+        </button>
+
+        <button
+          :if={@task.status in ["backlog", "approved", "blocked", "failed", "paused"]}
           phx-click="dispatch_worker"
           phx-value-id={@task.id}
           disabled={@blocked?}
@@ -735,12 +760,13 @@ defmodule TracyWeb.PlanLive.Show do
         </button>
       </div>
 
-      <%!-- Chain controls: pick a blocker + auto-dispatch toggle. Only show
-            if there's at least one existing task to chain after. --%>
-      <div :if={@existing_tasks != []} class="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <%!-- Chain controls: pick a blocker. Auto-dispatch is governed by the
+            `approved` status (CEO stamp), set via the Approve button on the
+            row. --%>
+      <div :if={@existing_tasks != []}>
         <select
           name="new_task[blocked_by]"
-          class="select select-bordered select-sm bg-base-200/40 text-xs sm:w-72"
+          class="select select-bordered select-sm w-full bg-base-200/40 text-xs sm:w-72"
           aria-label="Run after"
         >
           <option value="" selected={@new_task.blocked_by == nil}>
@@ -754,17 +780,10 @@ defmodule TracyWeb.PlanLive.Show do
             ⤷ After: {String.slice(t.title, 0, 60)}
           </option>
         </select>
-
-        <label class="flex items-center gap-2 text-[11px] text-base-content/70 sm:ml-2">
-          <input
-            type="checkbox"
-            name="new_task[auto_dispatch]"
-            value="true"
-            checked={@new_task.auto_dispatch}
-            class="checkbox checkbox-xs checkbox-primary"
-          />
-          Auto-dispatch when ready
-        </label>
+        <p class="mt-1 text-[10px] text-base-content/40">
+          Tip: tap <span class="text-base-content/60">Approve</span> on a task
+          to let it auto-fire when its blockers complete.
+        </p>
       </div>
     </form>
     """
@@ -962,6 +981,7 @@ defmodule TracyWeb.PlanLive.Show do
 
   defp status_label("triage"), do: "Triage"
   defp status_label("backlog"), do: "Backlog"
+  defp status_label("approved"), do: "Approved"
   defp status_label("in_progress"), do: "In Progress"
   defp status_label("in_review"), do: "In Review"
   defp status_label("needs_input"), do: "Needs Input"
@@ -974,6 +994,7 @@ defmodule TracyWeb.PlanLive.Show do
 
   defp status_dot("triage"), do: "bg-base-content/30"
   defp status_dot("backlog"), do: "bg-info"
+  defp status_dot("approved"), do: "bg-primary/60"
   defp status_dot("in_progress"), do: "bg-primary"
   defp status_dot("in_review"), do: "bg-secondary"
   defp status_dot("needs_input"), do: "bg-warning"
@@ -986,6 +1007,7 @@ defmodule TracyWeb.PlanLive.Show do
 
   defp status_pill_class("triage"), do: "border-base-300/60 bg-base-200/60 text-base-content/70"
   defp status_pill_class("backlog"), do: "border-info/40 bg-info/10 text-info"
+  defp status_pill_class("approved"), do: "border-primary/40 bg-primary/10 text-primary"
   defp status_pill_class("in_progress"), do: "border-primary/40 bg-primary/10 text-primary"
   defp status_pill_class("in_review"), do: "border-secondary/40 bg-secondary/10 text-secondary"
   defp status_pill_class("needs_input"), do: "border-warning/40 bg-warning/10 text-warning"

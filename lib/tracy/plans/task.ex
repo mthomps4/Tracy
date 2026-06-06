@@ -17,7 +17,7 @@ defmodule Tracy.Plans.Task do
   @foreign_key_type :binary_id
 
   @roles ~w(engineer designer researcher pm reviewer note_taker operator scout)
-  @statuses ~w(triage backlog in_progress in_review needs_input blocked failed paused done canceled)
+  @statuses ~w(triage backlog approved in_progress in_review needs_input blocked failed paused done canceled)
 
   def roles, do: @roles
   def statuses, do: @statuses
@@ -38,10 +38,9 @@ defmodule Tracy.Plans.Task do
     field :metadata, :map, default: %{}
 
     # Chain wiring. blocked_by: UUIDs of tasks that must be "done" before
-    # this one is ready. auto_dispatch: when ready, fire automatically
-    # vs wait for an explicit user click.
+    # this one is ready. The approval gate (status="approved") decides
+    # whether to auto-fire when ready vs wait for an explicit click.
     field :blocked_by, {:array, :binary_id}, default: []
-    field :auto_dispatch, :boolean, default: false
 
     belongs_to :plan, Plan
     belongs_to :agent_run, AgentRun
@@ -51,7 +50,7 @@ defmodule Tracy.Plans.Task do
 
   @required ~w(plan_id title role status)a
   @optional ~w(brief position assigned_at completed_at duration_ms cost_micros
-               report metadata agent_run_id blocked_by auto_dispatch)a
+               report metadata agent_run_id blocked_by)a
 
   def changeset(task \\ %__MODULE__{}, attrs) do
     task

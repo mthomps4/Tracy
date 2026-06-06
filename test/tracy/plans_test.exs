@@ -176,7 +176,7 @@ defmodule Tracy.PlansTest do
     end
   end
 
-  describe "task chains — task_ready? / tasks_ready_after" do
+  describe "task chains — task_ready? / tasks_ready_after / approve_task" do
     setup do
       {:ok, plan} = Plans.create_plan(%{title: "chain plan"})
 
@@ -187,8 +187,7 @@ defmodule Tracy.PlansTest do
           plan_id: plan.id,
           title: "B (blocked by A)",
           role: "engineer",
-          blocked_by: [a.id],
-          auto_dispatch: true
+          blocked_by: [a.id]
         })
 
       {:ok, c} =
@@ -200,6 +199,20 @@ defmodule Tracy.PlansTest do
         })
 
       %{plan: plan, a: a, b: b, c: c}
+    end
+
+    test "approve_task/1 transitions backlog → approved + stamps metadata.approved_at", %{a: a} do
+      assert {:ok, approved} = Plans.approve_task(a)
+      assert approved.status == "approved"
+      assert get_in(approved.metadata, ["approved_at"])
+      assert Plans.task_ever_approved?(approved)
+    end
+
+    test "approve_task/1 on non-backlog tasks is a no-op", %{b: b} do
+      {:ok, in_progress} = Plans.transition_task(b, "in_progress")
+
+      assert {:ok, unchanged} = Plans.approve_task(in_progress)
+      assert unchanged.status == "in_progress"
     end
 
     test "task_ready?/1 returns true for empty blocked_by", %{a: a} do
@@ -238,6 +251,14 @@ defmodule Tracy.PlansTest do
       assert b.id in ready_ids
       # C still blocked by B
       refute c.id in ready_ids
+    end
+
+    test "approved status survives tasks_ready_after filter (it's the auto-dispatch signal)", %{a: a, b: b} do
+      {:ok, _approved_b} = Plans.approve_task(b)
+      {:ok, _} = Plans.transition_task(a, "done")
+
+      ready = Plans.tasks_ready_after(a.id)
+      assert Enum.any?(ready, &(&1.id == b.id and &1.status == "approved"))
     end
 
     test "tasks_ready_after/1 skips already-running or terminal tasks", %{a: a, b: b} do

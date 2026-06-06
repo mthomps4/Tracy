@@ -193,7 +193,8 @@ defmodule Tracy.Workers.Server do
       {:ok, completed} ->
         # Insert any proposed tasks AFTER marking this one done so the UI
         # shows the completion and the new tasks together.
-        new_tasks = insert_spawned_tasks(completed.plan_id, spawned, completed.position)
+        new_tasks =
+          insert_spawned_tasks(completed.plan_id, spawned, completed.position, completed)
 
         broadcast(state.task_id, {:worker_completed, completed, report})
 
@@ -216,16 +217,16 @@ defmodule Tracy.Workers.Server do
   end
 
   # Find tasks whose blocked_by just cleared (this task was their last
-  # outstanding blocker) and that opted into auto_dispatch. Fire each
-  # via Workers.dispatch — they spawn their own Server processes under
-  # the same supervisor, independent of this one.
+  # outstanding blocker) AND that carry the CEO stamp (status="approved").
+  # Fire each via Workers.dispatch — they spawn their own Server processes
+  # under the same supervisor, independent of this one.
   #
   # Wrapped in try/rescue so a DB error here (e.g. sandbox shutdown in
   # tests, or a transient connection issue in prod) doesn't crash the
   # completing worker — its report is already persisted and broadcast.
   defp fan_out_auto_dispatches(completed_task_id) do
     Plans.tasks_ready_after(completed_task_id)
-    |> Enum.filter(& &1.auto_dispatch)
+    |> Enum.filter(&(&1.status == "approved"))
     |> Enum.each(fn task ->
       case Tracy.Workers.dispatch(task, initiated_by: :auto) do
         {:ok, _pid} ->
@@ -266,18 +267,33 @@ defmodule Tracy.Workers.Server do
       :ok
   end
 
-  defp insert_spawned_tasks(_plan_id, [], _start_position), do: []
+  defp insert_spawned_tasks(_plan_id, [], _start_position, _parent_task), do: []
 
-  defp insert_spawned_tasks(plan_id, spawned, start_position) do
+  defp insert_spawned_tasks(plan_id, spawned, start_position, parent_task) do
+    inherit_approval? = parent_task && Plans.task_ever_approved?(parent_task)
+
     spawned
     |> Enum.with_index(start_position + 1)
     |> Enum.map(fn {task_attrs, position} ->
-      attrs =
+      base =
         task_attrs
         |> normalize_task_attrs()
         |> Map.put(:plan_id, plan_id)
         |> Map.put(:position, position)
-        |> Map.put(:status, "backlog")
+
+      # Approval inheritance: if the spawning task carried the CEO stamp,
+      # its proposed children launch already-approved with the same
+      # timestamp on metadata. The chain keeps moving without re-asking.
+      attrs =
+        if inherit_approval? do
+          parent_stamp = get_in(parent_task.metadata || %{}, ["approved_at"])
+
+          base
+          |> Map.put(:status, "approved")
+          |> Map.put(:metadata, %{"approved_at" => parent_stamp, "inherited_from" => parent_task.id})
+        else
+          Map.put(base, :status, "backlog")
+        end
 
       case Plans.create_task(attrs) do
         {:ok, t} ->
