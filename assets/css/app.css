@@ -296,10 +296,15 @@ body {
     bottom: 0;
     border-radius: 1.25rem 1.25rem 0 0;
     border-bottom: 0;
-    transition: transform 200ms ease;
+    transition: transform 200ms ease, bottom 200ms ease;
   }
+  /* Peek state: sit ABOVE the mobile bottom tab bar (4rem tall, fixed
+   * at bottom: 0) so the dock handle doesn't visually collide with
+   * the nav. half / full take over the bottom area when chat is
+   * the active focus. */
   .chat-dock--snap-peek .chat-dock__panel {
-    transform: translateY(calc(100% - 4rem));
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 4rem);
+    transform: translateY(calc(100% - 3rem));
   }
   .chat-dock--snap-half .chat-dock__panel { height: 55dvh; transform: translateY(0); }
   .chat-dock--snap-full .chat-dock__panel { height: 92dvh; transform: translateY(0); }

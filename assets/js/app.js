@@ -145,6 +145,14 @@ const ChatDock = {
       const dy = e.touches[0].clientY - startY
       // Visual: just rely on snap states for now; advanced drag-resize later.
       if (Math.abs(dy) > 50) {
+        // Down-drag from peek → close (rather than overlapping the
+        // bottom tab bar). Up-drag from full → no-op.
+        if (dy > 0 && startSnap === "peek") {
+          this.pushEvent("close")
+          startY = null
+          return
+        }
+
         const target = dy > 0
           ? (startSnap === "full" ? "half" : "peek")
           : (startSnap === "peek" ? "half" : "full")
