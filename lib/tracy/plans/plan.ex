@@ -43,6 +43,11 @@ defmodule Tracy.Plans.Plan do
 
     has_many :tasks, Task, preload_order: [asc: :position]
 
+    # Virtual: computed by `Plans.list_projects_for_dashboard/1` and other
+    # aggregate-flavored fetchers. Not in DB; lives on the struct just so
+    # the UI can pattern-match `plan.metrics` cleanly.
+    field :metrics, :map, virtual: true
+
     timestamps(type: :utc_datetime_usec)
   end
 

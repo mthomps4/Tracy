@@ -58,10 +58,20 @@ defmodule TracyWeb.Router do
     pipe_through [:browser, :require_authenticated_user]
 
     live_session :authenticated,
-      on_mount: [{TracyWeb.UserAuth, :require_authenticated}] do
+      on_mount: [
+        {TracyWeb.UserAuth, :require_authenticated},
+        {TracyWeb.NavHooks, :set_current_tab}
+      ] do
       live "/boardroom", BoardroomLive
-      live "/plans", PlansLive
-      live "/plans/:id", PlanLive.Show
+      # V2 oversight dashboard — single-page grid of project cards.
+      live "/projects",     ProjectsLive
+      # Master/detail plans surface — same LiveView handles list (:index) and
+      # selected-plan preview (:show) via push_patch navigation.
+      live "/plans",        PlanLive.Index, :index
+      live "/plans/:id",    PlanLive.Index, :show
+      # Full task-management detail page (PlanLive.Show).
+      # Linked from the detail preview's "Open full detail" CTA.
+      live "/plans/:id/detail", PlanLive.Show
       live "/plans/:plan_id/tasks/:id", TaskLive.Show
     end
 

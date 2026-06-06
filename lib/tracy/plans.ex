@@ -109,6 +109,55 @@ defmodule Tracy.Plans do
     end)
   end
 
+  @doc """
+  Flat list of plans for the Projects dashboard. Each plan has tasks
+  preloaded and a computed `metrics` map of `:open_tasks`, `:in_flight`,
+  `:done`, `:total`, `:last_activity`, `:cost_micros`.
+
+  Ordered by `last_activity` descending — the most recently-touched
+  project comes first.
+  """
+  @spec list_projects_for_dashboard(keyword()) :: [Plan.t()]
+  def list_projects_for_dashboard(opts \\ []) do
+    project = Keyword.get(opts, :project)
+
+    Plan
+    |> maybe_filter_project(project)
+    |> Repo.all()
+    |> Repo.preload(tasks: from(t in Task, order_by: t.position))
+    |> Enum.map(&attach_metrics/1)
+    |> Enum.sort_by(& &1.metrics.last_activity, {:desc, DateTime})
+  end
+
+  defp attach_metrics(%Plan{tasks: tasks, updated_at: updated_at} = plan) do
+    total = length(tasks)
+    in_flight = Enum.count(tasks, &(&1.status == "in_progress"))
+    done = Enum.count(tasks, &(&1.status == "done"))
+    open = total - done - in_flight
+
+    cost_micros =
+      tasks
+      |> Enum.map(&(&1.cost_micros || 0))
+      |> Enum.sum()
+
+    last_activity =
+      tasks
+      |> Enum.map(& &1.updated_at)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.max(DateTime, fn -> updated_at end)
+
+    metrics = %{
+      total: total,
+      in_flight: in_flight,
+      done: done,
+      open: open,
+      cost_micros: cost_micros,
+      last_activity: last_activity
+    }
+
+    Map.put(plan, :metrics, metrics)
+  end
+
   @doc "Count of plans in each status (cheap query for header chips)."
   def status_counts(opts \\ []) do
     project = Keyword.get(opts, :project)
