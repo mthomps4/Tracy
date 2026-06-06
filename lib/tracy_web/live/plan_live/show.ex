@@ -31,6 +31,11 @@ defmodule TracyWeb.PlanLive.Show do
           Enum.each(plan.tasks, fn task ->
             if task.status == "in_progress", do: Workers.subscribe(task.id)
           end)
+
+          # Auto-pin the dock to this plan's project (or the plan title
+          # if no explicit project tag). Matt sees the dock header
+          # update to reflect the page he's actually looking at.
+          broadcast_context(socket, plan)
         end
 
         socket =
@@ -350,7 +355,7 @@ defmodule TracyWeb.PlanLive.Show do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} page_title={@plan.title}>
+    <Layouts.app flash={@flash} current_scope={@current_scope} page_title={@plan.title} current_tab={@current_tab}>
       <.link
         navigate={~p"/plans"}
         class="mb-3 inline-flex items-center gap-1 text-xs text-base-content/60 hover:text-base-content"
@@ -1127,6 +1132,20 @@ defmodule TracyWeb.PlanLive.Show do
   defp blank_to_nil(""), do: nil
   defp blank_to_nil(nil), do: nil
   defp blank_to_nil(val), do: val
+
+  # Broadcast the page's project context to the user's ChatDock so the
+  # pin updates automatically. The dock subscribes to
+  # chat:context:<user_id> on mount.
+  defp broadcast_context(socket, plan) do
+    user_id = socket.assigns.current_scope.user.id
+    project = plan.project || plan.title
+
+    Phoenix.PubSub.broadcast(
+      Tracy.PubSub,
+      "chat:context:#{user_id}",
+      {:context, %{project: project}}
+    )
+  end
 
   defp dispatch_button_title(_status, true),
     do: "Blocked by upstream task(s) — dispatch the blocker first"
