@@ -64,7 +64,7 @@ defmodule Tracy.LLM.Claude do
   def chat(messages, opts) do
     prompt = last_user_text(messages) || ""
     started_at = DateTime.utc_now()
-    sdk_opts = build_options(opts)
+    sdk_opts = build_options(opts, messages)
 
     try do
       sdk_messages = ClaudeAgentSDK.query(prompt, sdk_opts) |> Enum.to_list()
@@ -106,7 +106,7 @@ defmodule Tracy.LLM.Claude do
   @read_only_tools ~w(Read Grep Glob WebSearch WebFetch)
   @max_turns 20
 
-  defp build_options(opts) do
+  defp build_options(opts, messages) do
     model = Keyword.get(opts, :model) || Tracy.LLM.default_model()
 
     %Options{
@@ -115,46 +115,13 @@ defmodule Tracy.LLM.Claude do
       output_format: :json,
       allowed_tools: @read_only_tools,
       permission_mode: :bypass_permissions,
-      append_system_prompt: system_prompt_addendum()
+      append_system_prompt: Tracy.Brain.build_system_prompt(messages, surface: :boardroom)
     }
   rescue
     # Options struct fields can vary by SDK version; fall back to a leaner
     # config that the older field set is guaranteed to support.
     _ ->
       %Options{model: Keyword.get(opts, :model) || Tracy.LLM.default_model(), max_turns: @max_turns}
-  end
-
-  defp system_prompt_addendum do
-    cost = safe_cost_state()
-
-    surface_context = """
-
-    ---
-
-    ## Surface context
-
-    You're speaking to Matt in the Boardroom — a Phoenix LiveView chat (also
-    docked everywhere via the persistent ChatDock). Not a terminal.
-
-    Read-only tool surface here: #{Enum.join(@read_only_tools, ", ")}. You can
-    Read files, Grep/Glob across the codebase, WebSearch + WebFetch. Bash,
-    Edit, and Write are NOT here — when work needs to mutate files or run
-    commands, either propose it and Matt will run it, OR spawn a specialist
-    worker (engineer / designer / etc) via the Workers context, which has
-    the full tool surface and the per-plan workspace dir.
-
-    Keep replies appropriate for a chat surface: complete thoughts, not raw
-    tool dumps. When you investigate via tools, summarise findings rather
-    than narrating each call. End with a clear recommendation or next step.
-    """
-
-    Tracy.Persona.system_prompt(cost_state: cost) <> surface_context
-  end
-
-  defp safe_cost_state do
-    Tracy.Billing.sdk_pool_status()
-  rescue
-    _ -> nil
   end
 
   defp build_response(sdk_messages, opts, _started_at, _completed_at) do
