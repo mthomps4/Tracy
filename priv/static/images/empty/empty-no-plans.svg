@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
+  <defs>
+    <radialGradient id="glow1" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#00C4CC" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#00C4CC" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="tmark1" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#3152D4"/>
+      <stop offset="100%" stop-color="#007880"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Page background -->
+  <rect width="400" height="300" fill="#171C28"/>
+
+  <!-- Spider-web concentric rings (subtle) -->
+  <circle cx="200" cy="128" r="56"  fill="none" stroke="#00C4CC" stroke-width="0.5" opacity="0.14"/>
+  <circle cx="200" cy="128" r="95"  fill="none" stroke="#00C4CC" stroke-width="0.5" opacity="0.09"/>
+  <circle cx="200" cy="128" r="134" fill="none" stroke="#00C4CC" stroke-width="0.5" opacity="0.05"/>
+
+  <!-- Web radial lines (8 spokes) -->
+  <g stroke="#00C4CC" stroke-width="0.4" opacity="0.07">
+    <line x1="200" y1="128" x2="200" y2="-10"/>
+    <line x1="200" y1="128" x2="305" y2="37"/>
+    <line x1="200" y1="128" x2="340" y2="128"/>
+    <line x1="200" y1="128" x2="305" y2="219"/>
+    <line x1="200" y1="128" x2="200" y2="280"/>
+    <line x1="200" y1="128" x2="95" y2="219"/>
+    <line x1="200" y1="128" x2="60" y2="128"/>
+    <line x1="200" y1="128" x2="95" y2="37"/>
+  </g>
+
+  <!-- Conference table (oval, seen from slightly above) -->
+  <ellipse cx="200" cy="126" rx="84" ry="47" fill="#2A3347" stroke="#3A4D6A" stroke-width="1.5"/>
+  <!-- Inner table sheen -->
+  <ellipse cx="200" cy="118" rx="70" ry="34" fill="none" stroke="#3A4D6A" stroke-width="0.8" opacity="0.5"/>
+
+  <!-- Glow bloom behind T mark -->
+  <circle cx="200" cy="126" r="32" fill="url(#glow1)"/>
+
+  <!-- Tracy "T" mark in table center -->
+  <rect x="182" y="108" width="36" height="36" rx="7" fill="#1C2438" stroke="#00C4CC" stroke-width="1.5"/>
+  <!-- T letterform -->
+  <rect x="188" y="113" width="24" height="5" rx="1.5" fill="#00C4CC"/>
+  <rect x="197" y="118" width="6" height="19" rx="1.5" fill="#00C4CC"/>
+
+  <!-- 6 empty chairs around the table -->
+  <!-- Top centre -->
+  <rect x="189" y="53" width="22" height="16" rx="5" fill="#2A3347" stroke="#3A4D6A" stroke-width="1.5"/>
+  <!-- Bottom centre -->
+  <rect x="189" y="187" width="22" height="16" rx="5" fill="#2A3347" stroke="#3A4D6A" stroke-width="1.5"/>
+  <!-- Top-left -->
+  <rect x="108" y="70" width="22" height="16" rx="5" fill="#2A3347" stroke="#3A4D6A" stroke-width="1.5"/>
+  <!-- Top-right -->
+  <rect x="270" y="70" width="22" height="16" rx="5" fill="#2A3347" stroke="#3A4D6A" stroke-width="1.5"/>
+  <!-- Bottom-left -->
+  <rect x="108" y="170" width="22" height="16" rx="5" fill="#2A3347" stroke="#3A4D6A" stroke-width="1.5"/>
+  <!-- Bottom-right -->
+  <rect x="270" y="170" width="22" height="16" rx="5" fill="#2A3347" stroke="#3A4D6A" stroke-width="1.5"/>
+
+  <!-- Headline -->
+  <text x="200" y="244"
+        font-family="system-ui,-apple-system,sans-serif"
+        font-weight="600"
+        font-size="16"
+        fill="#E8F5F6"
+        text-anchor="middle">The boardroom awaits</text>
+
+  <!-- Subtext -->
+  <text x="200" y="266"
+        font-family="system-ui,-apple-system,sans-serif"
+        font-weight="400"
+        font-size="13"
+        fill="#7A9EA8"
+        text-anchor="middle">Create your first plan to start delegating</text>
+</svg>

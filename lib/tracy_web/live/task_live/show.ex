@@ -143,7 +143,7 @@ defmodule TracyWeb.TaskLive.Show do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} page_title={@task.title}>
+    <Layouts.app flash={@flash} current_scope={@current_scope} page_title={@task.title} current_tab={@current_tab}>
       <.link
         navigate={~p"/plans/#{@task.plan_id}?tab=tasks"}
         class="mb-3 inline-flex items-center gap-1 text-xs text-base-content/60 hover:text-base-content"

@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Tracy">
+  <title>Tracy</title>
+  <defs>
+    <!-- Background: deep boardroom slate with subtle centre highlight -->
+    <radialGradient id="bgGrad" cx="50%" cy="42%" r="66%">
+      <stop offset="0%"   stop-color="#1D2334"/>
+      <stop offset="100%" stop-color="#141923"/>
+    </radialGradient>
+
+    <!-- T letterform: light cyan at top → primary → deep at base -->
+    <linearGradient id="tGrad" x1="256" y1="80" x2="256" y2="432" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#82EBF0"/>
+      <stop offset="28%"  stop-color="#00C4CC"/>
+      <stop offset="100%" stop-color="#007880"/>
+    </linearGradient>
+
+    <!-- Glow bloom behind T -->
+    <filter id="tGlow" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="22"/>
+    </filter>
+
+    <!-- Clip to the rounded-square boundary -->
+    <clipPath id="bgClip">
+      <rect width="512" height="512" rx="80"/>
+    </clipPath>
+  </defs>
+
+  <!-- ── Background ────────────────────────────────────────── -->
+  <rect width="512" height="512" rx="80" fill="url(#bgGrad)"/>
+
+  <!-- ── Spider-web Easter egg (3% opacity — barely there) ─── -->
+  <!--   Boardroom-as-web: 3 rings + 4 radial lines             -->
+  <g clip-path="url(#bgClip)" opacity="0.055" stroke="#00C4CC" stroke-width="0.7" fill="none">
+    <circle cx="256" cy="256" r="82"/>
+    <circle cx="256" cy="256" r="162"/>
+    <circle cx="256" cy="256" r="242"/>
+    <!-- cardinal lines -->
+    <line x1="256" y1="0"   x2="256" y2="512"/>
+    <line x1="0"   y1="256" x2="512" y2="256"/>
+    <!-- diagonal lines -->
+    <line x1="0"   y1="0"   x2="512" y2="512"/>
+    <line x1="512" y1="0"   x2="0"   y2="512"/>
+  </g>
+
+  <!-- ── T shape — glow bloom (rendered behind the fill) ───── -->
+  <path d="M 96,80
+           H 416 Q 432,80  432,96
+           V 148 Q 432,164 416,164
+           H 312 Q 298,164 298,178
+           V 416 Q 298,432 282,432
+           H 230 Q 214,432 214,416
+           V 178 Q 214,164 200,164
+           H 96  Q 80,164  80,148
+           V 96  Q 80,80   96,80 Z"
+        fill="#00C4CC" opacity="0.42" filter="url(#tGlow)"/>
+
+  <!-- ── T shape — main gradient fill ─────────────────────── -->
+  <!--
+    Crossbar  : x 80–432 (width 352)  y 80–164  (height 84)
+    Stem      : x 214–298 (width 84)  y 80–432  (height 352)
+    All outer corners rx 16, inner concave fillets rx 14
+  -->
+  <path d="M 96,80
+           H 416 Q 432,80  432,96
+           V 148 Q 432,164 416,164
+           H 312 Q 298,164 298,178
+           V 416 Q 298,432 282,432
+           H 230 Q 214,432 214,416
+           V 178 Q 214,164 200,164
+           H 96  Q 80,164  80,148
+           V 96  Q 80,80   96,80 Z"
+        fill="url(#tGrad)"/>
+
+  <!-- ── Specular highlight: thin bright line at crossbar top ─ -->
+  <rect x="96" y="80" width="320" height="2.5" rx="1.25" fill="#FFFFFF" opacity="0.20"/>
+
+  <!-- ── Connection nodes: boardroom seats / AI ports ─────── -->
+  <!--   Filled with bg colour → punched-hole effect on the T   -->
+  <circle cx="256" cy="80"  r="7" fill="#141923"/>  <!-- head of table   -->
+  <circle cx="80"  cy="122" r="7" fill="#141923"/>  <!-- left seat        -->
+  <circle cx="432" cy="122" r="7" fill="#141923"/>  <!-- right seat       -->
+  <circle cx="256" cy="432" r="7" fill="#141923"/>  <!-- foot anchor      -->
+
+  <!-- ── Outer border: faint cyan rim ─────────────────────── -->
+  <rect width="512" height="512" rx="80" fill="none"
+        stroke="#00C4CC" stroke-width="1.5" stroke-opacity="0.16"/>
+</svg>

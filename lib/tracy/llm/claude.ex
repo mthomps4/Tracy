@@ -60,26 +60,40 @@ defmodule Tracy.LLM.Claude do
   alias Tracy.Billing
   alias Tracy.LLM.Message
 
+  # Hard ceiling on a single boardroom turn. Boardroom calls have max_turns=5
+  # and read-only tools; a normal reply finishes in 5-30s. 90s gives buffer
+  # for a slow agent loop but bounds blast radius if the SDK stream hangs.
+  @chat_timeout_ms 90_000
+
   @impl true
   def chat(messages, opts) do
     prompt = last_user_text(messages) || ""
     started_at = DateTime.utc_now()
     sdk_opts = build_options(opts, messages)
 
-    try do
-      sdk_messages = ClaudeAgentSDK.query(prompt, sdk_opts) |> Enum.to_list()
-      completed_at = DateTime.utc_now()
+    task =
+      Task.async(fn ->
+        ClaudeAgentSDK.query(prompt, sdk_opts) |> Enum.to_list()
+      end)
 
-      response =
-        sdk_messages
-        |> build_response(opts, started_at, completed_at)
-        |> record_run(opts, started_at, completed_at)
+    case Task.yield(task, @chat_timeout_ms) || Task.shutdown(task, :brutal_kill) do
+      {:ok, sdk_messages} ->
+        completed_at = DateTime.utc_now()
 
-      {:ok, response}
-    rescue
-      exception ->
-        Logger.warning("Tracy.LLM.Claude.chat failed: #{Exception.message(exception)}")
-        {:error, {:claude_sdk_error, exception}}
+        response =
+          sdk_messages
+          |> build_response(opts, started_at, completed_at)
+          |> record_run(opts, started_at, completed_at)
+
+        {:ok, response}
+
+      {:exit, reason} ->
+        Logger.warning("Tracy.LLM.Claude.chat crashed: #{inspect(reason)}")
+        {:error, {:claude_sdk_error, reason}}
+
+      nil ->
+        Logger.warning("Tracy.LLM.Claude.chat timed out after #{@chat_timeout_ms}ms")
+        {:error, :timeout}
     end
   end
 
@@ -104,7 +118,11 @@ defmodule Tracy.LLM.Claude do
   end
 
   @read_only_tools ~w(Read Grep Glob WebSearch WebFetch)
-  @max_turns 20
+  # Boardroom is conversational, not a coding agent. Cap at 5 so an open-ended
+  # question ("clean this up for mobile") doesn't burn 10+ minutes of silent
+  # tool-loops behind the "thinking…" indicator. Deep investigation belongs in
+  # `Tracy.Workers.dispatch` where progress is visible on `/projects/<id>`.
+  @max_turns 5
 
   defp build_options(opts, messages) do
     model = Keyword.get(opts, :model) || Tracy.LLM.default_model()

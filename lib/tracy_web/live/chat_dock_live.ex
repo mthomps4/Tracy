@@ -653,7 +653,14 @@ defmodule TracyWeb.ChatDockLive do
   defp format_error({:claude_sdk_error, other}),
     do: "SDK error: " <> inspect(other, limit: 200)
 
-  defp format_error(:timeout), do: "Timed out."
+  defp format_error(:timeout),
+    do:
+      "Took too long — bailed at 90s. The boardroom is read-only and capped at 5 turns; " <>
+        "if you need deep investigation, ask me to dispatch a worker for it."
+
+  defp format_error(:hung_request_killed),
+    do: "That request was hung — I killed it so the dock could recover. Try again."
+
   defp format_error(other), do: "Error: " <> inspect(other, limit: 200)
 
   # Deterministic UUID derived from the user id so the same person

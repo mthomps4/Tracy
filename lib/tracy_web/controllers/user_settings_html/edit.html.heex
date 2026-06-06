@@ -1,49 +1,59 @@
 <Layouts.app flash={@flash} current_scope={@current_scope}>
-  <div class="text-center">
-    <.header>
-      Account Settings
-      <:subtitle>Manage your account email address and password settings</:subtitle>
-    </.header>
+  <div class="max-w-lg mx-auto px-4 py-8">
+
+    <div class="mb-8">
+      <h1 class="text-2xl font-bold">Account Settings</h1>
+      <p class="text-base-content/50 text-sm mt-1">Manage your email address and password</p>
+    </div>
+
+    <%!-- Email section --%>
+    <section class="mb-8">
+      <h2 class="section-heading">Email Address</h2>
+      <.form :let={f} for={@email_changeset} action={~p"/users/settings"} id="update_email">
+        <input type="hidden" name="action" value="update_email" />
+        <.input
+          field={f[:email]}
+          type="email"
+          label="Email address"
+          value={@current_scope.user.email}
+          autocomplete="username"
+          spellcheck="false"
+          required
+        />
+        <div class="mt-4">
+          <.button variant="primary" phx-disable-with="Saving…">Change Email</.button>
+        </div>
+      </.form>
+    </section>
+
+    <div class="divider" />
+
+    <%!-- Password section --%>
+    <section>
+      <h2 class="section-heading">Password</h2>
+      <.form :let={f} for={@password_changeset} action={~p"/users/settings"} id="update_password">
+        <input type="hidden" name="action" value="update_password" />
+        <.input
+          field={f[:password]}
+          type="password"
+          label="New password"
+          autocomplete="new-password"
+          spellcheck="false"
+          required
+        />
+        <.input
+          field={f[:password_confirmation]}
+          type="password"
+          label="Confirm new password"
+          autocomplete="new-password"
+          spellcheck="false"
+          required
+        />
+        <div class="mt-4">
+          <.button variant="primary" phx-disable-with="Saving…">Save Password</.button>
+        </div>
+      </.form>
+    </section>
+
   </div>
-
-  <.form :let={f} for={@email_changeset} action={~p"/users/settings"} id="update_email">
-    <input type="hidden" name="action" value="update_email" />
-
-    <.input
-      field={f[:email]}
-      type="email"
-      label="Email"
-      autocomplete="username"
-      spellcheck="false"
-      required
-    />
-
-    <.button variant="primary" phx-disable-with="Changing...">Change Email</.button>
-  </.form>
-
-  <div class="divider" />
-
-  <.form :let={f} for={@password_changeset} action={~p"/users/settings"} id="update_password">
-    <input type="hidden" name="action" value="update_password" />
-
-    <.input
-      field={f[:password]}
-      type="password"
-      label="New password"
-      autocomplete="new-password"
-      spellcheck="false"
-      required
-    />
-    <.input
-      field={f[:password_confirmation]}
-      type="password"
-      label="Confirm new password"
-      autocomplete="new-password"
-      spellcheck="false"
-      required
-    />
-    <.button variant="primary" phx-disable-with="Changing...">
-      Save Password
-    </.button>
-  </.form>
 </Layouts.app>

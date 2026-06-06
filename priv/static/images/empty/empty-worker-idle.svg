@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
+  <defs>
+    <radialGradient id="chipGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#00C4CC" stop-opacity="0.20"/>
+      <stop offset="100%" stop-color="#00C4CC" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Animated pulse for the glow ring -->
+    <style>
+      .pulse-ring {
+        transform-origin: 200px 122px;
+        animation: chip-pulse 2.8s ease-in-out infinite;
+      }
+      @keyframes chip-pulse {
+        0%, 100% { opacity: 0.18; transform: scale(1); }
+        50%       { opacity: 0.06; transform: scale(1.12); }
+      }
+    </style>
+  </defs>
+
+  <!-- Page background -->
+  <rect width="400" height="300" fill="#171C28"/>
+
+  <!-- Glow bloom -->
+  <circle cx="200" cy="122" r="72" fill="url(#chipGlow)"/>
+
+  <!-- Animated pulse ring -->
+  <circle cx="200" cy="122" r="72" fill="none" stroke="#00C4CC" stroke-width="1.2" class="pulse-ring"/>
+
+  <!-- CPU chip body -->
+  <rect x="148" y="70" width="104" height="104" rx="12" fill="#1F2B40" stroke="#3A4D6A" stroke-width="1.5"/>
+
+  <!-- Chip inner die area -->
+  <rect x="162" y="84" width="76" height="76" rx="6" fill="#2A3347" stroke="#3A4D6A" stroke-width="1"/>
+
+  <!-- Pins — top (4 pins) -->
+  <rect x="164" y="58" width="8" height="13" rx="2" fill="#2A3347" stroke="#3A4D6A" stroke-width="1"/>
+  <rect x="182" y="58" width="8" height="13" rx="2" fill="#2A3347" stroke="#3A4D6A" stroke-width="1"/>
+  <rect x="200" y="58" width="8" height="13" rx="2" fill="#2A3347" stroke="#3A4D6A" stroke-width="1"/>
+  <rect x="218" y="58" width="8" height="13" rx="2" fill="#2A3347" stroke="#3A4D6A" stroke-width="1"/>
+
+  <!-- Pins — bottom (4 pins) -->
+  <rect x="164" y="203" width="8" height="13" rx="2" fill="#2A3347" stroke="#3A4D6A" stroke-width="1"/>
+  <rect x="182" y="203" width="8" height="13" rx="2" fill="#2A3347" stroke="#3A4D6A" stroke-width="1"/>
+  <rect x="200" y="203" width="8" height="13" rx="2" fill="#2A3347" stroke="#3A4D6A" stroke-width="1"/>
+  <rect x="218" y="203" width="8" height="13" rx="2" fill="#2A3347" stroke="#3A4D6A" stroke-width="1"/>
+
+  <!-- Pins — left (4 pins) -->
+  <rect x="136" y="84" width="13" height="8" rx="2" fill="#2A3347" stroke="#3A4D6A" stroke-width="1"/>
+  <rect x="136" y="102" width="13" height="8" rx="2" fill="#2A3347" stroke="#3A4D6A" stroke-width="1"/>
+  <rect x="136" y="120" width="13" height="8" rx="2" fill="#2A3347" stroke="#3A4D6A" stroke-width="1"/>
+  <rect x="136" y="138" width="13" height="8" rx="2" fill="#2A3347" stroke="#3A4D6A" stroke-width="1"/>
+
+  <!-- Pins — right (4 pins) -->
+  <rect x="251" y="84" width="13" height="8" rx="2" fill="#2A3347" stroke="#3A4D6A" stroke-width="1"/>
+  <rect x="251" y="102" width="13" height="8" rx="2" fill="#2A3347" stroke="#3A4D6A" stroke-width="1"/>
+  <rect x="251" y="120" width="13" height="8" rx="2" fill="#2A3347" stroke="#3A4D6A" stroke-width="1"/>
+  <rect x="251" y="138" width="13" height="8" rx="2" fill="#2A3347" stroke="#3A4D6A" stroke-width="1"/>
+
+  <!-- Sleeping eyes — two closed curved lines -->
+  <!-- Left eye (closed arc) -->
+  <path d="M 181 113 Q 187 107 193 113" fill="none" stroke="#00C4CC" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- Right eye (closed arc) -->
+  <path d="M 207 113 Q 213 107 219 113" fill="none" stroke="#00C4CC" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Subtle smile -->
+  <path d="M 188 130 Q 200 138 212 130" fill="none" stroke="#00C4CC" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+
+  <!-- ZZZ floating up-right -->
+  <text x="262" y="82"
+        font-family="system-ui,sans-serif"
+        font-weight="700"
+        font-size="18"
+        fill="#00C4CC"
+        opacity="0.80">Z</text>
+  <text x="276" y="66"
+        font-family="system-ui,sans-serif"
+        font-weight="700"
+        font-size="14"
+        fill="#00C4CC"
+        opacity="0.55">Z</text>
+  <text x="288" y="53"
+        font-family="system-ui,sans-serif"
+        font-weight="700"
+        font-size="10"
+        fill="#00C4CC"
+        opacity="0.30">Z</text>
+
+  <!-- Headline -->
+  <text x="200" y="244"
+        font-family="system-ui,-apple-system,sans-serif"
+        font-weight="600"
+        font-size="16"
+        fill="#E8F5F6"
+        text-anchor="middle">All workers standing by</text>
+
+  <!-- Subtext -->
+  <text x="200" y="266"
+        font-family="system-ui,-apple-system,sans-serif"
+        font-weight="400"
+        font-size="13"
+        fill="#7A9EA8"
+        text-anchor="middle">Workers appear here when plans are running</text>
+</svg>

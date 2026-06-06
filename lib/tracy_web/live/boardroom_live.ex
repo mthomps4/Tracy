@@ -311,12 +311,16 @@ defmodule TracyWeb.BoardroomLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} page_title="Boardroom">
-      <div class="flex h-[calc(100dvh-7rem)] flex-col sm:h-[calc(100dvh-8rem)]">
-        <.boardroom_header cost={@cost} email={@current_scope.user.email} />
+    <Layouts.app flash={@flash} current_scope={@current_scope} page_title="Boardroom" cost={@cost} current_tab={@current_tab}>
+      <div class="flex h-[calc(100dvh-9rem)] flex-col sm:h-[calc(100dvh-10rem)]">
+        <.boardroom_header email={@current_scope.user.email} />
 
         <section
           id="messages"
+          role="log"
+          aria-label="Conversation"
+          aria-live="polite"
+          aria-relevant="additions"
           phx-update="stream"
           phx-hook="ScrollToBottom"
           class="flex-1 space-y-3 overflow-y-auto px-1 py-2 sm:px-2"
@@ -336,6 +340,16 @@ defmodule TracyWeb.BoardroomLive do
               msg.role in [:assistant, :error, :system] && "justify-start"
             ]}
           >
+            <%!-- Screen-reader sender label — sighted users get left/right layout for this --%>
+            <span class="sr-only">
+              {case msg.role do
+                :user -> "You:"
+                :assistant -> "Tracy:"
+                :system -> "System:"
+                :error -> "Error:"
+                _ -> ""
+              end}
+            </span>
             <div class={[
               "max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed sm:max-w-[75%] sm:px-4 sm:py-3 sm:text-base",
               msg.role == :user && "bg-primary text-primary-content rounded-tr-sm",
@@ -372,46 +386,14 @@ defmodule TracyWeb.BoardroomLive do
     """
   end
 
-  attr :cost, :map, required: true
   attr :email, :string, required: true
 
   defp boardroom_header(assigns) do
     ~H"""
-    <header class="mb-3 flex flex-col gap-3 sm:mb-4 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <p class="text-xs font-medium uppercase tracking-wider text-base-content/50">Tracy</p>
-        <h1 class="text-xl font-bold tracking-tight text-base-content sm:text-2xl">Boardroom</h1>
-        <p class="mt-0.5 text-xs text-base-content/60">Signed in as {@email}</p>
-      </div>
-
-      <div class="rounded-box border border-base-300/60 bg-base-200/40 px-3 py-2 sm:max-w-xs">
-        <div class="flex items-baseline justify-between gap-2">
-          <span class="text-[10px] font-medium uppercase tracking-wider text-base-content/60">
-            SDK pool
-          </span>
-          <span class="text-xs tabular-nums text-base-content/70">
-            ${:io_lib.format(~c"~.2f", [@cost.spent_dollars])} / ${@cost.cap_dollars}
-          </span>
-        </div>
-        <div
-          class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-base-300/70"
-          role="progressbar"
-          aria-valuenow={trunc(@cost.pct)}
-          aria-valuemin="0"
-          aria-valuemax="100"
-        >
-          <div
-            class={[
-              "h-full transition-all",
-              @cost.zone == :normal && "bg-success",
-              @cost.zone == :caution && "bg-success",
-              @cost.zone == :winddown && "bg-warning",
-              @cost.zone == :hardstop && "bg-error"
-            ]}
-            style={"width: #{max(@cost.pct, 1.5)}%"}
-          ></div>
-        </div>
-      </div>
+    <header class="mb-3 sm:mb-4">
+      <p class="text-xs font-medium uppercase tracking-wider text-base-content/50">Tracy</p>
+      <h1 class="text-xl font-bold tracking-tight text-base-content sm:text-2xl">Boardroom</h1>
+      <p class="mt-0.5 text-xs text-base-content/60">Signed in as {@email}</p>
     </header>
     """
   end

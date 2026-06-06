@@ -1,59 +1,73 @@
 <Layouts.app flash={@flash} current_scope={@current_scope}>
-  <div class="mx-auto max-w-sm">
-    <div class="text-center">
-      <.header>Welcome {@user.email}</.header>
+  <div class="auth-page-wrapper">
+
+    <%!-- Tracy logo lockup --%>
+    <div class="auth-logo-block">
+      <img src={~p"/images/tracy-mark.svg"} alt="Tracy" width="56" height="56" class="rounded-xl" />
+      <div class="auth-wordmark">
+        <span class="text-primary">T</span><span class="text-base-content/90">RACY</span>
+      </div>
+      <div class="auth-tagline">Boardroom AI</div>
     </div>
 
-    <.form
-      :if={!@user.confirmed_at}
-      for={@form}
-      id="confirmation_form"
-      action={~p"/users/log-in?_action=confirmed"}
-      phx-mounted={JS.focus_first()}
-    >
-      <input type="hidden" name={@form[:token].name} value={@form[:token].value} />
-      <.button
-        name={@form[:remember_me].name}
-        value="true"
-        phx-disable-with="Confirming..."
-        class="btn btn-primary w-full"
-      >
-        Confirm and stay logged in
-      </.button>
-      <.button phx-disable-with="Confirming..." class="btn btn-primary btn-soft w-full mt-2">
-        Confirm and log in only this time
-      </.button>
-    </.form>
+    <%!-- Auth card --%>
+    <div class="auth-card">
+      <div class="text-center mb-2">
+        <.header>Welcome {@user.email}</.header>
+      </div>
 
-    <.form
-      :if={@user.confirmed_at}
-      for={@form}
-      id="login_form"
-      action={~p"/users/log-in"}
-      phx-mounted={JS.focus_first()}
-    >
-      <input type="hidden" name={@form[:token].name} value={@form[:token].value} />
-      <%= if @current_scope do %>
-        <.button variant="primary" phx-disable-with="Logging in..." class="btn btn-primary w-full">
-          Log in
-        </.button>
-      <% else %>
+      <.form
+        :if={!@user.confirmed_at}
+        for={@form}
+        id="confirmation_form"
+        action={~p"/users/log-in?_action=confirmed"}
+        phx-mounted={JS.focus_first()}
+      >
+        <input type="hidden" name={@form[:token].name} value={@form[:token].value} />
         <.button
           name={@form[:remember_me].name}
           value="true"
-          phx-disable-with="Logging in..."
+          phx-disable-with="Confirming…"
           class="btn btn-primary w-full"
         >
-          Keep me logged in on this device
+          Confirm and stay logged in
         </.button>
-        <.button phx-disable-with="Logging in..." class="btn btn-primary btn-soft w-full mt-2">
-          Log me in only this time
+        <.button phx-disable-with="Confirming…" class="btn btn-primary btn-soft w-full mt-2">
+          Confirm and log in only this time
         </.button>
-      <% end %>
-    </.form>
+      </.form>
 
-    <p :if={!@user.confirmed_at} class="alert alert-outline mt-8">
-      Tip: If you prefer passwords, you can enable them in the user settings.
-    </p>
+      <.form
+        :if={@user.confirmed_at}
+        for={@form}
+        id="login_form"
+        action={~p"/users/log-in"}
+        phx-mounted={JS.focus_first()}
+      >
+        <input type="hidden" name={@form[:token].name} value={@form[:token].value} />
+        <%= if @current_scope do %>
+          <.button variant="primary" phx-disable-with="Logging in…" class="btn btn-primary w-full">
+            Log in
+          </.button>
+        <% else %>
+          <.button
+            name={@form[:remember_me].name}
+            value="true"
+            phx-disable-with="Logging in…"
+            class="btn btn-primary w-full"
+          >
+            Keep me logged in on this device
+          </.button>
+          <.button phx-disable-with="Logging in…" class="btn btn-primary btn-soft w-full mt-2">
+            Log me in only this time
+          </.button>
+        <% end %>
+      </.form>
+
+      <p :if={!@user.confirmed_at} class="alert alert-outline mt-6 text-sm">
+        Tip: If you prefer passwords, you can enable them in the user settings.
+      </p>
+    </div>
+
   </div>
 </Layouts.app>

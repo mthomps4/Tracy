@@ -37,6 +37,12 @@ defmodule TracyWeb.PlansLive do
      |> load_plans()}
   end
 
+  # Reply CTA on "Needs Input" cards — navigates to plan detail which has the
+  # reply form. A dedicated reply modal (D-2.2c) can replace this later.
+  def handle_event("open_reply", %{"id" => id}, socket) do
+    {:noreply, push_navigate(socket, to: ~p"/plans/#{id}")}
+  end
+
   def handle_event("transition", %{"id" => id, "to" => new_status}, socket) do
     plan = Plans.get_plan!(id)
     user_id = socket.assigns.current_scope.user.id
@@ -61,7 +67,7 @@ defmodule TracyWeb.PlansLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} page_title="Plans">
+    <Layouts.app flash={@flash} current_scope={@current_scope} page_title="Plans" current_tab={@current_tab}>
       <.plans_header
         include_terminal={@include_terminal}
         status_counts={@status_counts}
@@ -78,7 +84,18 @@ defmodule TracyWeb.PlansLive do
         />
       </div>
 
-      <.empty_state :if={@total == 0} />
+      <.empty_state
+        :if={@total == 0}
+        illustration={:no_plans}
+        title="No plans yet"
+        description="Plans are created from the boardroom — chat with Tracy, then type /save-as-plan to capture the conversation."
+      >
+        <:actions>
+          <.link navigate={~p"/boardroom"} class="btn btn-primary btn-sm">
+            <.icon name="hero-chat-bubble-left-right-mini" class="size-4" /> Open the boardroom
+          </.link>
+        </:actions>
+      </.empty_state>
 
       <p class="mt-6 text-center text-xs text-base-content/40">
         Plans are created from the boardroom: type
@@ -148,49 +165,91 @@ defmodule TracyWeb.PlansLive do
   attr :plan, :map, required: true
 
   defp plan_row(assigns) do
+    assigns =
+      assigns
+      |> assign(:cost_pct, cost_pct(assigns.plan))
+      |> assign(:cost_tier, cost_tier(assigns.plan))
+      |> assign(:card_class, plan_card_class(assigns.plan))
+
     ~H"""
     <.link
       navigate={~p"/plans/#{@plan.id}"}
-      class="flex items-center gap-2 px-4 py-3 transition-colors hover:bg-base-300/30 focus:bg-base-300/40 focus:outline-none active:bg-base-300/60"
+      class={"flex items-center gap-2 px-4 py-3 transition-colors hover:bg-base-300/30 focus:bg-base-300/40 focus:outline-none active:bg-base-300/60 #{@card_class}"}
     >
       <div class="min-w-0 flex-1">
+        <%!-- Plan ID + title --%>
+        <p class="mb-0.5 text-[10px] font-bold uppercase tracking-widest text-base-content/40">
+          {plan_id_label(@plan)}
+        </p>
         <p class="truncate text-sm font-medium text-base-content sm:text-base">
           {@plan.title}
         </p>
-        <p :if={@plan.project} class="mt-0.5 truncate text-[10px] uppercase tracking-wider text-base-content/50">
-          {@plan.project}
-        </p>
-        <p :if={@plan.brief} class="mt-1 line-clamp-2 text-xs text-base-content/70 sm:text-sm">
-          {@plan.brief}
-        </p>
+
+        <%!-- Meta row: role badge, cost, elapsed, task count --%>
+        <div class="mt-1 flex flex-wrap items-center gap-1.5">
+          <span :if={plan_role(@plan)} class={"badge-role role-#{plan_role(@plan)}"}>
+            {role_label(plan_role(@plan))}
+          </span>
+
+          <%!-- Inline cost for active/in-progress plans --%>
+          <span
+            :if={show_cost?(@plan)}
+            class={"cost-inline #{@cost_tier}"}
+            title={"$#{format_cost(@plan.cost_used)} used of $#{format_cost(@plan.cost_cap)} cap"}
+          >
+            $<%= format_cost(@plan.cost_used) %>/$<%= format_cost(@plan.cost_cap) %>
+          </span>
+
+          <%!-- Cap label for plans not yet started --%>
+          <span :if={show_cap_only?(@plan)} class="text-[10px] text-base-content/45">
+            $<%= format_cost(@plan.cost_cap) %> cap
+          </span>
+
+          <%!-- Elapsed time --%>
+          <span :if={show_elapsed?(@plan)} class="text-[10px] text-base-content/40">
+            {format_elapsed(@plan)}
+          </span>
+
+          <%!-- Task progress (when no worker cost info) --%>
+          <span
+            :if={not show_cost?(@plan) and not show_cap_only?(@plan) and Enum.any?(@plan.tasks)}
+            class="text-[10px] text-base-content/40"
+          >
+            {Enum.count(@plan.tasks, &(&1.status == "done"))}/{length(@plan.tasks)} tasks
+          </span>
+        </div>
+
+        <%!-- Mini cost bar — only when plan has cap AND spend --%>
+        <div :if={@cost_pct > 0} class="plan-cost-bar">
+          <div class={"plan-cost-fill #{@cost_tier}"} style={"width:#{@cost_pct}%"}></div>
+        </div>
       </div>
-      <div class="flex shrink-0 flex-col items-end gap-1 text-right">
-        <span class="text-[10px] tabular-nums text-base-content/50">
+
+      <%!-- Right column: timestamp + reply or chevron --%>
+      <div class="flex shrink-0 flex-col items-end gap-1.5">
+        <span class="text-[10px] tabular-nums text-base-content/40">
           {format_relative(@plan.updated_at)}
         </span>
-        <span :if={Enum.any?(@plan.tasks)} class="text-[10px] text-base-content/40">
-          {Enum.count(@plan.tasks, &(&1.status == "done"))}/{length(@plan.tasks)} tasks
-        </span>
+        <%!-- Reply button for Needs Input --%>
+        <button
+          :if={@plan.status == "needs_input"}
+          class="reply-btn"
+          phx-click="open_reply"
+          phx-value-id={@plan.id}
+          onclick="event.stopPropagation()"
+        >
+          ↩ Reply
+        </button>
+        <.icon
+          :if={@plan.status != "needs_input"}
+          name="hero-chevron-right-mini"
+          class="size-4 shrink-0 text-base-content/30"
+        />
       </div>
-      <.icon name="hero-chevron-right-mini" class="size-4 shrink-0 text-base-content/30" />
     </.link>
     """
   end
 
-  defp empty_state(assigns) do
-    ~H"""
-    <div class="mx-auto max-w-md rounded-box border border-dashed border-base-300/60 bg-base-200/20 px-6 py-12 text-center">
-      <.icon name="hero-squares-2x2" class="mx-auto size-8 text-primary/60" />
-      <h2 class="mt-3 text-sm font-semibold text-base-content">No plans yet</h2>
-      <p class="mt-1 text-xs text-base-content/60">
-        Plans get created from the boardroom — chat with Tracy, then type <code class="rounded bg-base-300/60 px-1.5 py-0.5 text-base-content/80">/save-as-plan</code> to capture the conversation.
-      </p>
-      <.link navigate={~p"/boardroom"} class="btn btn-primary btn-sm mt-4">
-        <.icon name="hero-chat-bubble-left-right-mini" class="size-4" /> Open the boardroom
-      </.link>
-    </div>
-    """
-  end
 
   # ---- helpers ----
 
@@ -248,6 +307,94 @@ defmodule TracyWeb.PlansLive do
   end
 
   defp format_relative(_), do: ""
+
+  # ── D-2.1a Cost visualization helpers ────────────────────────────────────
+
+  # The plan struct may or may not have cost fields depending on Phase.
+  # We guard with Map.get so this renders safely against the current schema.
+
+  defp plan_role(plan), do: Map.get(plan, :worker_role)
+
+  defp plan_id_label(plan) do
+    case Map.get(plan, :plan_id) do
+      nil -> nil
+      id -> "TRA-#{id}"
+    end
+  end
+
+  defp role_label(nil), do: nil
+  defp role_label("note_taker"), do: "Note Taker"
+  defp role_label(role), do: String.capitalize(role)
+
+  defp cost_pct(plan) do
+    used = Map.get(plan, :cost_used)
+    cap = Map.get(plan, :cost_cap)
+
+    if is_number(used) and is_number(cap) and cap > 0 and used > 0 do
+      min(100, round(used / cap * 100))
+    else
+      0
+    end
+  end
+
+  defp cost_tier(plan) do
+    pct = cost_pct(plan)
+
+    cond do
+      pct >= 75 -> "cost-danger"
+      pct >= 50 -> "cost-warn"
+      true -> "cost-good"
+    end
+  end
+
+  # Show inline cost (used/cap) when the plan has both values and is running.
+  defp show_cost?(plan) do
+    used = Map.get(plan, :cost_used)
+    cap = Map.get(plan, :cost_cap)
+    status = Map.get(plan, :status, "")
+    active = status in ~w(in_progress in_review needs_input blocked done)
+
+    active and is_number(used) and is_number(cap) and cap > 0
+  end
+
+  # Show cap only (no spend yet) for Triage/Backlog plans with a cap set.
+  defp show_cap_only?(plan) do
+    used = Map.get(plan, :cost_used, 0)
+    cap = Map.get(plan, :cost_cap)
+    status = Map.get(plan, :status, "")
+    pre_dispatch = status in ~w(triage backlog)
+
+    pre_dispatch and is_number(cap) and cap > 0 and (is_nil(used) or used == 0)
+  end
+
+  # Show elapsed when started_at is set and plan is active.
+  defp show_elapsed?(plan) do
+    not is_nil(Map.get(plan, :started_at)) and
+      Map.get(plan, :status, "") in ~w(in_progress needs_input blocked)
+  end
+
+  defp format_elapsed(%{started_at: %DateTime{} = started_at}) do
+    diff = DateTime.diff(DateTime.utc_now(), started_at, :second)
+
+    cond do
+      diff < 60 -> "#{diff}s"
+      diff < 3600 -> "#{div(diff, 60)}m #{rem(diff, 60)}s"
+      true -> "#{div(diff, 3600)}h #{div(rem(diff, 3600), 60)}m"
+    end
+  end
+
+  defp format_elapsed(_), do: nil
+
+  defp format_cost(nil), do: "—"
+  defp format_cost(n) when is_float(n), do: :erlang.float_to_binary(n, decimals: 2)
+  defp format_cost(n) when is_integer(n), do: "#{n}"
+  defp format_cost(%Decimal{} = d), do: Decimal.to_string(d, :normal)
+  defp format_cost(other), do: "#{other}"
+
+  defp plan_card_class(%{status: "needs_input"}), do: "plan-card-needs-input"
+  defp plan_card_class(%{status: "done"}), do: "plan-card-done"
+  defp plan_card_class(%{status: "canceled"}), do: "plan-card-canceled"
+  defp plan_card_class(_), do: ""
 
   # Used in HEEx markers attribute — silence false-positive "unused" warning.
   _ = Plan

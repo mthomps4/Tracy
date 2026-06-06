@@ -222,11 +222,15 @@ defmodule TracyWeb.CoreComponents do
             value="true"
             checked={@checked}
             class={@class || "checkbox checkbox-sm"}
+            aria-invalid={@errors != [] && "true"}
+            aria-describedby={@errors != [] && "#{@id}-error"}
             {@rest}
           />{@label}
         </span>
       </label>
-      <.error :for={msg <- @errors}>{msg}</.error>
+      <div :if={@errors != []} id={"#{@id}-error"}>
+        <.error :for={msg <- @errors}>{msg}</.error>
+      </div>
     </div>
     """
   end
@@ -241,13 +245,17 @@ defmodule TracyWeb.CoreComponents do
           name={@name}
           class={[@class || "w-full select", @errors != [] && (@error_class || "select-error")]}
           multiple={@multiple}
+          aria-invalid={@errors != [] && "true"}
+          aria-describedby={@errors != [] && "#{@id}-error"}
           {@rest}
         >
           <option :if={@prompt} value="">{@prompt}</option>
           {Phoenix.HTML.Form.options_for_select(@options, @value)}
         </select>
       </label>
-      <.error :for={msg <- @errors}>{msg}</.error>
+      <div :if={@errors != []} id={"#{@id}-error"}>
+        <.error :for={msg <- @errors}>{msg}</.error>
+      </div>
     </div>
     """
   end
@@ -264,10 +272,14 @@ defmodule TracyWeb.CoreComponents do
             @class || "w-full textarea",
             @errors != [] && (@error_class || "textarea-error")
           ]}
+          aria-invalid={@errors != [] && "true"}
+          aria-describedby={@errors != [] && "#{@id}-error"}
           {@rest}
         >{Phoenix.HTML.Form.normalize_value("textarea", @value)}</textarea>
       </label>
-      <.error :for={msg <- @errors}>{msg}</.error>
+      <div :if={@errors != []} id={"#{@id}-error"}>
+        <.error :for={msg <- @errors}>{msg}</.error>
+      </div>
     </div>
     """
   end
@@ -287,10 +299,14 @@ defmodule TracyWeb.CoreComponents do
             @class || "w-full input",
             @errors != [] && (@error_class || "input-error")
           ]}
+          aria-invalid={@errors != [] && "true"}
+          aria-describedby={@errors != [] && "#{@id}-error"}
           {@rest}
         />
       </label>
-      <.error :for={msg <- @errors}>{msg}</.error>
+      <div :if={@errors != []} id={"#{@id}-error"}>
+        <.error :for={msg <- @errors}>{msg}</.error>
+      </div>
     </div>
     """
   end
@@ -442,6 +458,140 @@ defmodule TracyWeb.CoreComponents do
   def icon(%{name: "hero-" <> _} = assigns) do
     ~H"""
     <span class={[@name, @class]} />
+    """
+  end
+
+  @doc """
+  Renders an empty state with an illustration, title, and optional description.
+
+  The illustration is one of the five named states:
+    * `:no_plans` — boardroom table, empty chairs (first-run state)
+    * `:no_tasks` — clipboard with empty rows (plan has no tasks yet)
+    * `:no_results` — magnifying glass with question mark (search/filter)
+    * `:worker_idle` — sleeping CPU (no active plans)
+    * `:budget_exhausted` — depleted battery (daily limit hit)
+
+  Use `role="status"` (the default) when the empty state replaces a loading
+  skeleton so screen readers announce the resolved state normally.
+
+  ## Examples
+
+      <.empty_state
+        illustration={:no_plans}
+        title="No plans yet"
+        description="Create your first plan to get Tracy's workers moving."
+      />
+
+      <.empty_state illustration={:no_results} title="Nothing found">
+        <:actions>
+          <.button phx-click="clear_filter">Clear filter</.button>
+        </:actions>
+      </.empty_state>
+  """
+  attr :illustration, :atom,
+    required: true,
+    values: [:no_plans, :no_tasks, :no_results, :worker_idle, :budget_exhausted],
+    doc: "which illustration to show"
+
+  attr :title, :string, required: true, doc: "heading text below the illustration"
+  attr :description, :string, default: nil, doc: "optional supporting text"
+  attr :role, :string, default: "status", doc: "ARIA role; use \"status\" when replacing a skeleton"
+  attr :class, :any, default: nil, doc: "extra classes on the container"
+  attr :rest, :global
+
+  slot :actions, doc: "optional call-to-action buttons rendered below the description"
+
+  def empty_state(assigns) do
+    assigns = assign(assigns, :illustration_src, empty_state_src(assigns.illustration))
+    assigns = assign(assigns, :illustration_alt, empty_state_alt(assigns.illustration))
+
+    ~H"""
+    <div
+      role={@role}
+      class={[
+        "flex flex-col items-center justify-center gap-4 px-6 py-12 text-center",
+        @class
+      ]}
+      {@rest}
+    >
+      <img
+        src={@illustration_src}
+        alt={@illustration_alt}
+        width="280"
+        height="210"
+        class="max-w-full opacity-90 select-none"
+        aria-hidden="true"
+        draggable="false"
+      />
+      <div class="flex flex-col items-center gap-1.5 max-w-xs">
+        <h3 class="text-base font-semibold text-base-content">{@title}</h3>
+        <p :if={@description} class="text-sm text-base-content/60 leading-relaxed">
+          {@description}
+        </p>
+      </div>
+      <div :if={@actions != []} class="flex flex-wrap justify-center gap-2 mt-1">
+        {render_slot(@actions)}
+      </div>
+    </div>
+    """
+  end
+
+  defp empty_state_src(:no_plans),         do: "/images/empty/empty-no-plans.svg"
+  defp empty_state_src(:no_tasks),         do: "/images/empty/empty-no-tasks.svg"
+  defp empty_state_src(:no_results),       do: "/images/empty/empty-no-results.svg"
+  defp empty_state_src(:worker_idle),      do: "/images/empty/empty-worker-idle.svg"
+  defp empty_state_src(:budget_exhausted), do: "/images/empty/empty-budget-exhausted.svg"
+
+  defp empty_state_alt(:no_plans),         do: "Boardroom table with empty chairs"
+  defp empty_state_alt(:no_tasks),         do: "Clipboard with empty task rows"
+  defp empty_state_alt(:no_results),       do: "Magnifying glass with question mark"
+  defp empty_state_alt(:worker_idle),      do: "CPU chip with sleeping eyes"
+  defp empty_state_alt(:budget_exhausted), do: "Depleted battery with warning"
+
+  @doc """
+  Renders an inline border-arc spinner.
+
+  ## Examples
+
+      <.spinner />
+      <.spinner size="sm" />
+      <.spinner size="lg" class="text-primary" />
+  """
+  attr :size, :string, default: "md", values: ~w(xs sm md lg), doc: "spinner size"
+  attr :class, :any, default: nil
+  attr :rest, :global
+
+  def spinner(assigns) do
+    ~H"""
+    <span
+      class={[spinner_class(@size), @class]}
+      aria-label="Loading"
+      aria-hidden="true"
+      {@rest}
+    />
+    """
+  end
+
+  defp spinner_class("xs"), do: "spinner spinner-xs"
+  defp spinner_class("sm"), do: "spinner spinner-sm"
+  defp spinner_class("md"), do: "spinner"
+  defp spinner_class("lg"), do: "spinner spinner-lg"
+
+  @doc """
+  Renders the three-dot typing indicator (agent composing a response).
+
+  ## Examples
+
+      <.dot_pulse />
+      <.dot_pulse aria-label="Agent is composing…" />
+  """
+  attr :rest, :global
+
+  def dot_pulse(assigns) do
+    ~H"""
+    <div class="dot-pulse" role="status" aria-label="Agent is typing…" {@rest}>
+      <span></span><span></span><span></span>
+    </div>
     """
   end
 

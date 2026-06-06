@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Tracy">
+  <title>Tracy</title>
+  <!--
+    SVG favicon — designed to be legible at 16 × 16 and 32 × 32.
+    No gradients or filters: maximum contrast for tiny display.
+
+    Usage in <head>:
+      <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+      <link rel="icon" type="image/png"     href="/favicon-32.png" sizes="32x32">
+      <link rel="icon" type="image/png"     href="/favicon-16.png" sizes="16x16">
+  -->
+
+  <!-- Dark rounded-square background -->
+  <rect width="32" height="32" rx="6" fill="#171C28"/>
+
+  <!-- Bold T — two overlapping rects, same cyan fill -->
+  <!-- Crossbar: full width with horizontal padding 3px -->
+  <rect x="3"  y="4" width="26" height="7" rx="1.5" fill="#00C4CC"/>
+  <!-- Stem: centred, runs top-to-bottom -->
+  <rect x="12" y="4" width="8"  height="24" rx="1.5" fill="#00C4CC"/>
+</svg>

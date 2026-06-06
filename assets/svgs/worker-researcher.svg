@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" data-slot="icon">
+  <!--
+    worker-researcher — outline icon, 24×24, 1.5px stroke.
+
+    Concept: open book with a magnifying glass overlay.
+    The book represents knowledge/documentation; the lens represents
+    search, synthesis, and inquiry. Distinct from bare
+    magnifying-glass (used for the search UI element).
+  -->
+  <!-- Open book: left page -->
+  <path stroke-linecap="round" stroke-linejoin="round"
+        d="M12 6.5C10.5 5.167 8.833 4.5 7 4.5 5.5 4.5 4.2 4.833 3 5.5v11c1.2-.667 2.5-1 4-1 1.833 0 3.5.667 5 2V6.5Z"/>
+  <!-- Open book: right page (only go up to x=16 since magnifier overlaps) -->
+  <path stroke-linecap="round" stroke-linejoin="round"
+        d="M12 6.5c1.5-1.333 3.167-2 5-2 1.1 0 2.1.2 3 .6v7.15"/>
+  <!-- Magnifying glass circle (bottom-right) -->
+  <path stroke-linecap="round" stroke-linejoin="round"
+        d="M15.5 14a3 3 0 1 0 6 0 3 3 0 0 0-6 0Z"/>
+  <!-- Magnifying glass handle -->
+  <path stroke-linecap="round" stroke-linejoin="round"
+        d="M20.621 19.621-1.5-1.5"/>
+</svg>

@@ -1,32 +1,46 @@
 <Layouts.app flash={@flash} current_scope={@current_scope}>
-  <div class="mx-auto max-w-sm">
-    <div class="text-center">
-      <.header>
-        Register for an account
-        <:subtitle>
-          Already registered?
-          <.link navigate={~p"/users/log-in"} class="font-semibold text-brand hover:underline">
-            Log in
-          </.link>
-          to your account now.
-        </:subtitle>
-      </.header>
+  <div class="auth-page-wrapper">
+
+    <%!-- Tracy logo lockup --%>
+    <div class="auth-logo-block">
+      <img src={~p"/images/tracy-mark.svg"} alt="Tracy" width="56" height="56" class="rounded-xl" />
+      <div class="auth-wordmark">
+        <span class="text-primary">T</span><span class="text-base-content/90">RACY</span>
+      </div>
+      <div class="auth-tagline">Boardroom AI</div>
     </div>
 
-    <.form :let={f} for={@changeset} action={~p"/users/register"}>
-      <.input
-        field={f[:email]}
-        type="email"
-        label="Email"
-        autocomplete="username"
-        spellcheck="false"
-        required
-        phx-mounted={JS.focus()}
-      />
+    <%!-- Auth card --%>
+    <div class="auth-card">
+      <div class="text-center">
+        <.header>
+          Create an account
+          <:subtitle>You'll get an email to confirm your address</:subtitle>
+        </.header>
+      </div>
 
-      <.button phx-disable-with="Creating account..." class="btn btn-primary w-full">
-        Create an account
-      </.button>
-    </.form>
+      <.form :let={f} for={@changeset} action={~p"/users/register"} class="mt-4">
+        <.input
+          field={f[:email]}
+          type="email"
+          label="Email address"
+          autocomplete="username"
+          spellcheck="false"
+          required
+          phx-mounted={JS.focus()}
+        />
+        <.button phx-disable-with="Creating account…" class="btn btn-primary w-full mt-4">
+          Create an account <span aria-hidden="true">→</span>
+        </.button>
+      </.form>
+
+      <p class="text-center text-sm text-base-content/50 mt-5">
+        Already registered?
+        <.link navigate={~p"/users/log-in"} class="text-primary font-medium hover:underline">
+          Log in
+        </.link>
+      </p>
+    </div>
+
   </div>
 </Layouts.app>

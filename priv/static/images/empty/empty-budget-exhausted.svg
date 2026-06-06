@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
+  <defs>
+    <radialGradient id="redGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#E84136" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#E84136" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="battFill" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"  stop-color="#E84136"/>
+      <stop offset="100%" stop-color="#B02820"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Page background -->
+  <rect width="400" height="300" fill="#171C28"/>
+
+  <!-- Red glow -->
+  <ellipse cx="200" cy="128" rx="100" ry="60" fill="url(#redGlow)"/>
+
+  <!-- Battery body outline -->
+  <rect x="88" y="92" width="200" height="80" rx="10" fill="#1F2B40" stroke="#3A4D6A" stroke-width="2"/>
+
+  <!-- Battery terminal (nub on right) -->
+  <rect x="288" y="112" width="20" height="40" rx="5" fill="#2A3347" stroke="#3A4D6A" stroke-width="1.5"/>
+
+  <!-- Battery — empty track -->
+  <rect x="96" y="100" width="183" height="64" rx="6" fill="#171C28"/>
+
+  <!-- Battery — tiny remaining charge (5%) -->
+  <rect x="96" y="100" width="12" height="64" rx="6" fill="url(#battFill)"/>
+  <!-- Glow on the charge sliver -->
+  <rect x="96" y="100" width="12" height="64" rx="6" fill="none" stroke="#E84136" stroke-width="1" opacity="0.6"/>
+
+  <!-- Battery low segments (ghost) -->
+  <rect x="115" y="104" width="37" height="56" rx="3" fill="#1F2B40" stroke="#2A3347" stroke-width="0.8"/>
+  <rect x="157" y="104" width="37" height="56" rx="3" fill="#1F2B40" stroke="#2A3347" stroke-width="0.8"/>
+  <rect x="199" y="104" width="37" height="56" rx="3" fill="#1F2B40" stroke="#2A3347" stroke-width="0.8"/>
+  <rect x="241" y="104" width="36" height="56" rx="3" fill="#1F2B40" stroke="#2A3347" stroke-width="0.8"/>
+
+  <!-- Moon / sleep icon centered in battery (indicating rest) -->
+  <!-- Moon shape: crescent using two overlapping circles -->
+  <circle cx="200" cy="132" r="20" fill="#2A3347"/>
+  <circle cx="208" cy="128" r="16" fill="#171C28"/>
+  <!-- Moon glow edge -->
+  <circle cx="200" cy="132" r="20" fill="none" stroke="#E84136" stroke-width="1" opacity="0.5"/>
+
+  <!-- Warning percentage label above battery -->
+  <text x="200" y="82"
+        font-family="system-ui,-apple-system,sans-serif"
+        font-weight="700"
+        font-size="13"
+        fill="#E84136"
+        text-anchor="middle"
+        letter-spacing="1">SESSION LIMIT REACHED</text>
+
+  <!-- Small warning triangle -->
+  <polygon points="200,200 190,216 210,216"
+           fill="none" stroke="#E84136" stroke-width="1.5" stroke-linejoin="round"/>
+  <text x="200" y="213"
+        font-family="system-ui,sans-serif"
+        font-weight="700"
+        font-size="8"
+        fill="#E84136"
+        text-anchor="middle">!</text>
+
+  <!-- Headline -->
+  <text x="200" y="244"
+        font-family="system-ui,-apple-system,sans-serif"
+        font-weight="600"
+        font-size="16"
+        fill="#E8F5F6"
+        text-anchor="middle">Tracy is resting</text>
+
+  <!-- Subtext -->
+  <text x="200" y="266"
+        font-family="system-ui,-apple-system,sans-serif"
+        font-weight="400"
+        font-size="13"
+        fill="#7A9EA8"
+        text-anchor="middle">Daily budget reached — resets at midnight</text>
+</svg>

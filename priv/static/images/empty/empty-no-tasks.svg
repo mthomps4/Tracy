@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
+  <defs>
+    <radialGradient id="glow2" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#00C4CC" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#00C4CC" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Page background -->
+  <rect width="400" height="300" fill="#171C28"/>
+
+  <!-- Subtle glow behind clipboard -->
+  <ellipse cx="200" cy="130" rx="80" ry="80" fill="url(#glow2)"/>
+
+  <!-- Clipboard body -->
+  <rect x="125" y="44" width="150" height="172" rx="10" fill="#1F2B40" stroke="#3A4D6A" stroke-width="1.5"/>
+
+  <!-- Clipboard top band -->
+  <rect x="125" y="44" width="150" height="28" rx="10" fill="#2A3347"/>
+  <rect x="125" y="58"  width="150" height="14" fill="#2A3347"/>
+
+  <!-- Clip (top attachment) -->
+  <rect x="173" y="32" width="54" height="26" rx="7" fill="#2A3347" stroke="#3A4D6A" stroke-width="1.5"/>
+  <!-- Clip hole -->
+  <circle cx="200" cy="45" r="7" fill="#171C28" stroke="#3A4D6A" stroke-width="1"/>
+
+  <!-- Section title ghost line -->
+  <rect x="148" y="88" width="80" height="7" rx="3" fill="#2E3D57" opacity="0.7"/>
+
+  <!-- Task rows (empty) — each has a checkbox square + line -->
+  <!-- Row 1 -->
+  <rect x="148" y="108" width="14" height="14" rx="3" fill="none" stroke="#3A4D6A" stroke-width="1.5"/>
+  <rect x="170" y="112" width="90" height="6" rx="3" fill="#2E3D57" opacity="0.5"/>
+
+  <!-- Row 2 -->
+  <rect x="148" y="133" width="14" height="14" rx="3" fill="none" stroke="#3A4D6A" stroke-width="1.5"/>
+  <rect x="170" y="137" width="72" height="6" rx="3" fill="#2E3D57" opacity="0.4"/>
+
+  <!-- Row 3 -->
+  <rect x="148" y="158" width="14" height="14" rx="3" fill="none" stroke="#3A4D6A" stroke-width="1.5"/>
+  <rect x="170" y="162" width="84" height="6" rx="3" fill="#2E3D57" opacity="0.3"/>
+
+  <!-- Row 4 (very faint) -->
+  <rect x="148" y="183" width="14" height="14" rx="3" fill="none" stroke="#3A4D6A" stroke-width="1" opacity="0.5"/>
+  <rect x="170" y="187" width="60" height="6" rx="3" fill="#2E3D57" opacity="0.2"/>
+
+  <!-- "+" add button at bottom-right of clipboard -->
+  <circle cx="253" cy="198" r="12" fill="#00C4CC" opacity="0.15"/>
+  <text x="253" y="203"
+        font-family="system-ui,sans-serif"
+        font-weight="300"
+        font-size="18"
+        fill="#00C4CC"
+        text-anchor="middle">+</text>
+
+  <!-- Headline -->
+  <text x="200" y="244"
+        font-family="system-ui,-apple-system,sans-serif"
+        font-weight="600"
+        font-size="16"
+        fill="#E8F5F6"
+        text-anchor="middle">No tasks yet</text>
+
+  <!-- Subtext -->
+  <text x="200" y="266"
+        font-family="system-ui,-apple-system,sans-serif"
+        font-weight="400"
+        font-size="13"
+        fill="#7A9EA8"
+        text-anchor="middle">Add tasks to start building this plan</text>
+</svg>

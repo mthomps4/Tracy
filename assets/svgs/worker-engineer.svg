@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" data-slot="icon">
+  <!--
+    worker-engineer — outline icon, 24×24, 1.5px stroke.
+
+    Concept: terminal window with a >_ prompt. The rounded rectangle
+    frame signals "terminal"; the chevron+underscore signals "command
+    line engineering."  Horizontally distinguishes from Heroicons'
+    cpu-chip (used for the general AI chip metaphor) and from
+    command-line (which we reserve for the boardroom chat tab).
+  -->
+  <!-- Terminal window frame -->
+  <path stroke-linecap="round" stroke-linejoin="round"
+        d="M3 5.25C3 4.007 4.007 3 5.25 3h13.5C19.993 3 21 4.007 21 5.25v13.5C21 19.993 19.993 21 18.75 21H5.25C4.007 21 3 19.993 3 18.75V5.25Z"/>
+  <!-- Chevron prompt > -->
+  <path stroke-linecap="round" stroke-linejoin="round"
+        d="M7.5 9.75 11.25 12 7.5 14.25"/>
+  <!-- Blinking cursor _ -->
+  <path stroke-linecap="round" stroke-linejoin="round"
+        d="M13 14.25h4.5"/>
+</svg>

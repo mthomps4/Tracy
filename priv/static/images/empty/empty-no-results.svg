@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
+  <defs>
+    <radialGradient id="glassFill" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#2A3347"/>
+      <stop offset="100%" stop-color="#1F2B40"/>
+    </radialGradient>
+    <clipPath id="glassClip">
+      <circle cx="190" cy="118" r="60"/>
+    </clipPath>
+  </defs>
+
+  <!-- Page background -->
+  <rect width="400" height="300" fill="#171C28"/>
+
+  <!-- Magnifying glass circle — outer ring -->
+  <circle cx="190" cy="118" r="66" fill="none" stroke="#2A3347" stroke-width="16"/>
+  <!-- Glass fill -->
+  <circle cx="190" cy="118" r="58" fill="url(#glassFill)"/>
+  <!-- Glass inner ring highlight -->
+  <circle cx="190" cy="118" r="58" fill="none" stroke="#3A4D6A" stroke-width="1.2"/>
+
+  <!-- Spider web INSIDE the glass (clipped) -->
+  <g clip-path="url(#glassClip)" opacity="0.18">
+    <circle cx="190" cy="118" r="20" fill="none" stroke="#00C4CC" stroke-width="0.7"/>
+    <circle cx="190" cy="118" r="37" fill="none" stroke="#00C4CC" stroke-width="0.6"/>
+    <circle cx="190" cy="118" r="55" fill="none" stroke="#00C4CC" stroke-width="0.5"/>
+    <line x1="190" y1="63" x2="190" y2="178" stroke="#00C4CC" stroke-width="0.5"/>
+    <line x1="135" y1="118" x2="245" y2="118" stroke="#00C4CC" stroke-width="0.5"/>
+    <line x1="151" y1="79" x2="229" y2="157" stroke="#00C4CC" stroke-width="0.4"/>
+    <line x1="229" y1="79" x2="151" y2="157" stroke="#00C4CC" stroke-width="0.4"/>
+  </g>
+
+  <!-- "?" inside glass -->
+  <text x="190" y="130"
+        font-family="system-ui,-apple-system,sans-serif"
+        font-weight="700"
+        font-size="42"
+        fill="#00C4CC"
+        opacity="0.55"
+        text-anchor="middle">?</text>
+
+  <!-- Magnifying glass handle -->
+  <line x1="236" y1="162" x2="276" y2="202"
+        stroke="#2A3347" stroke-width="18" stroke-linecap="round"/>
+  <line x1="236" y1="162" x2="276" y2="202"
+        stroke="#3A4D6A" stroke-width="14" stroke-linecap="round"/>
+  <!-- Handle highlight -->
+  <line x1="238" y1="163" x2="265" y2="190"
+        stroke="#4A5D80" stroke-width="4" stroke-linecap="round" opacity="0.5"/>
+
+  <!-- Headline -->
+  <text x="200" y="244"
+        font-family="system-ui,-apple-system,sans-serif"
+        font-weight="600"
+        font-size="16"
+        fill="#E8F5F6"
+        text-anchor="middle">Nothing found</text>
+
+  <!-- Subtext -->
+  <text x="200" y="266"
+        font-family="system-ui,-apple-system,sans-serif"
+        font-weight="400"
+        font-size="13"
+        fill="#7A9EA8"
+        text-anchor="middle">Try a different search or clear your filters</text>
+</svg>

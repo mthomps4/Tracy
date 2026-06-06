@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" data-slot="icon" role="img">
+  <!--
+    Tracy-T — brand monogram icon, 24×24 solid.
+
+    Form: bold "T" letterform with four circular notches at
+    crossbar-ends and top/bottom of stem — the boardroom metaphor
+    (crossbar = table, notches = seats / AI connection ports).
+
+    Usage: nav brand mark, favicon fallback, any place the full
+    tracy-mark.svg is too large.
+  -->
+  <path fill-rule="evenodd" clip-rule="evenodd" d="
+    M 4.5 3
+    H 19.5
+    A 1.5 1.5 0 0 1 21 4.5
+    V 7.5
+    A 1.5 1.5 0 0 1 19.5 9
+    H 14
+    V 20.5
+    A 1.5 1.5 0 0 1 12.5 22
+    H 11.5
+    A 1.5 1.5 0 0 1 10 20.5
+    V 9
+    H 4.5
+    A 1.5 1.5 0 0 1 3 7.5
+    V 4.5
+    A 1.5 1.5 0 0 1 4.5 3
+    Z
+
+    M 10.5 5.25
+    A 1.5 1.5 0 1 1 13.5 5.25
+    A 1.5 1.5 0 1 1 10.5 5.25
+    Z
+
+    M 3 6
+    A 1.5 1.5 0 1 1 6 6
+    A 1.5 1.5 0 1 1 3 6
+    Z
+
+    M 18 6
+    A 1.5 1.5 0 1 1 21 6
+    A 1.5 1.5 0 1 1 18 6
+    Z
+
+    M 10.5 20.5
+    A 1.5 1.5 0 1 1 13.5 20.5
+    A 1.5 1.5 0 1 1 10.5 20.5
+    Z
+  "/>
+</svg>
