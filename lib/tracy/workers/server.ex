@@ -213,6 +213,12 @@ defmodule Tracy.Workers.Server do
         # doesn't disrupt the completion broadcast.
         learn_from_worker(completed, report)
 
+        # Worker output → Tracy.Assets auto-register. Files the worker
+        # wrote into the per-plan workspace become Assets visible on
+        # the plan page. Fire-and-forget for the same reason — Asset
+        # import is cosmetic, shouldn't block the worker's completion.
+        import_worker_artifacts(completed.plan_id)
+
         if new_tasks != [] do
           broadcast(state.task_id, {:worker_spawned_tasks, new_tasks})
         end
@@ -453,6 +459,26 @@ defmodule Tracy.Workers.Server do
         end
       end)
     end
+  end
+
+  defp import_worker_artifacts(plan_id) do
+    Task.start(fn ->
+      case Tracy.Assets.import_workspace(plan_id, source: "worker") do
+        {:ok, []} ->
+          :ok
+
+        {:ok, assets} ->
+          require Logger
+          Logger.info("Tracy.Assets.import_workspace: registered #{length(assets)} artifact(s) for plan #{plan_id}")
+
+          # Bump the plan's assets:<plan_id> topic so any open PlanLive
+          # refreshes immediately.
+          PubSub.broadcast(Tracy.PubSub, "assets:#{plan_id}", :assets_changed)
+
+        _ ->
+          :ok
+      end
+    end)
   end
 
   defp stringify_keys(map) when is_map(map) do

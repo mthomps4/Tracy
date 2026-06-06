@@ -103,6 +103,134 @@ defmodule Tracy.Assets do
     create_asset(attrs)
   end
 
+  @doc """
+  Scan the plan's filesystem workspace and register any files not yet
+  tracked as Assets. Returns `{:ok, [created_assets]}` — empty list if
+  nothing was new.
+
+  Called after a worker completes; the side effect closes the loop
+  between "designer wrote `logo.svg` into the workspace" and "the
+  plan's Assets section shows logo.svg." Workspace files stay where
+  they are on disk (the dir is the worker's CWD, persists across
+  dispatches); the Asset row carries a copy of the bytes + metadata
+  for the UI to render via the existing download endpoint.
+
+  Skips files matching common ignore patterns (`.git/`, `node_modules/`,
+  `.DS_Store`, hidden dotfiles at the root). Caps per-file size at 25MB
+  to stay within the upload limit — bigger files are logged + skipped.
+  """
+  @spec import_workspace(String.t() | Tracy.Plans.Plan.t(), keyword()) ::
+          {:ok, [Tracy.Assets.Asset.t()]}
+  def import_workspace(plan_or_id, opts \\ [])
+
+  def import_workspace(%Tracy.Plans.Plan{id: id}, opts), do: import_workspace(id, opts)
+
+  def import_workspace(plan_id, opts) when is_binary(plan_id) do
+    uploaded_by_id = Keyword.get(opts, :uploaded_by_id)
+    max_bytes = Keyword.get(opts, :max_bytes, 25_000_000)
+    source = Keyword.get(opts, :source, "worker")
+
+    workspace = Tracy.Plans.workspace_path(plan_id)
+
+    existing_filenames =
+      list_asset_summaries(plan_id)
+      |> Enum.map(& &1.filename)
+      |> MapSet.new()
+
+    created =
+      workspace
+      |> list_workspace_files()
+      |> Enum.reject(&MapSet.member?(existing_filenames, relative_to(workspace, &1)))
+      |> Enum.flat_map(fn path ->
+        case File.stat(path) do
+          {:ok, %{size: size}} when size > max_bytes ->
+            require Logger
+            Logger.info("Tracy.Assets.import_workspace: skipping #{path} (#{size} > #{max_bytes} bytes)")
+            []
+
+          {:ok, _} ->
+            data = File.read!(path)
+            filename = relative_to(workspace, path)
+
+            attrs = %{
+              plan_id: plan_id,
+              filename: filename,
+              content_type: infer_content_type(filename),
+              data: data,
+              uploaded_by_id: uploaded_by_id
+            }
+
+            case create_file_asset(Map.put(attrs, :source, source)) do
+              {:ok, asset} -> [asset]
+              {:error, _cs} -> []
+            end
+
+          _ ->
+            []
+        end
+      end)
+
+    {:ok, created}
+  end
+
+  defp list_workspace_files(root) do
+    if File.exists?(root) do
+      do_walk(root, root)
+    else
+      []
+    end
+  end
+
+  @ignored_dirs ~w(.git node_modules .vscode .idea _build deps)
+  @ignored_files ~w(.DS_Store)
+
+  defp do_walk(root, dir) do
+    case File.ls(dir) do
+      {:ok, entries} ->
+        Enum.flat_map(entries, fn entry ->
+          path = Path.join(dir, entry)
+
+          cond do
+            entry in @ignored_files -> []
+            entry in @ignored_dirs -> []
+            # Skip dotfiles at the workspace root only
+            String.starts_with?(entry, ".") and dir == root -> []
+            File.dir?(path) -> do_walk(root, path)
+            File.regular?(path) -> [path]
+            true -> []
+          end
+        end)
+
+      _ ->
+        []
+    end
+  end
+
+  defp relative_to(root, path) do
+    Path.relative_to(path, root)
+  end
+
+  defp infer_content_type(filename) do
+    case Path.extname(filename) |> String.downcase() do
+      ".svg" -> "image/svg+xml"
+      ".png" -> "image/png"
+      ".jpg" -> "image/jpeg"
+      ".jpeg" -> "image/jpeg"
+      ".gif" -> "image/gif"
+      ".webp" -> "image/webp"
+      ".html" -> "text/html"
+      ".htm" -> "text/html"
+      ".css" -> "text/css"
+      ".js" -> "application/javascript"
+      ".json" -> "application/json"
+      ".md" -> "text/markdown"
+      ".markdown" -> "text/markdown"
+      ".txt" -> "text/plain"
+      ".pdf" -> "application/pdf"
+      _ -> "application/octet-stream"
+    end
+  end
+
   @doc "Create a markdown note asset."
   def create_note_asset(attrs) do
     attrs =
