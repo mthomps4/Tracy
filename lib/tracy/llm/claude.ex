@@ -125,22 +125,36 @@ defmodule Tracy.LLM.Claude do
   end
 
   defp system_prompt_addendum do
-    """
-    You are speaking to Matt in the Tracy boardroom — a Phoenix LiveView chat
-    interface, not a terminal. He's running you for strategic help: planning,
-    investigation, design review.
+    cost = safe_cost_state()
 
-    Tools available to you in this surface: #{Enum.join(@read_only_tools, ", ")}.
-    You can Read files, Grep/Glob across the codebase, WebSearch and WebFetch.
-    Bash, Edit, and Write are NOT available here — when work needs to mutate
-    files or run commands, propose it in chat and Matt will run it himself
-    (workers land in Phase 2 and will get the full tool surface).
+    surface_context = """
 
-    Keep replies appropriate for a chat UI: complete thoughts, not raw tool
-    dumps. When you do investigate via tools, summarise the findings rather
-    than narrating each tool call. End with a clear recommendation or next
-    step where it makes sense.
+    ---
+
+    ## Surface context
+
+    You're speaking to Matt in the Boardroom — a Phoenix LiveView chat (also
+    docked everywhere via the persistent ChatDock). Not a terminal.
+
+    Read-only tool surface here: #{Enum.join(@read_only_tools, ", ")}. You can
+    Read files, Grep/Glob across the codebase, WebSearch + WebFetch. Bash,
+    Edit, and Write are NOT here — when work needs to mutate files or run
+    commands, either propose it and Matt will run it, OR spawn a specialist
+    worker (engineer / designer / etc) via the Workers context, which has
+    the full tool surface and the per-plan workspace dir.
+
+    Keep replies appropriate for a chat surface: complete thoughts, not raw
+    tool dumps. When you investigate via tools, summarise findings rather
+    than narrating each call. End with a clear recommendation or next step.
     """
+
+    Tracy.Persona.system_prompt(cost_state: cost) <> surface_context
+  end
+
+  defp safe_cost_state do
+    Tracy.Billing.sdk_pool_status()
+  rescue
+    _ -> nil
   end
 
   defp build_response(sdk_messages, opts, _started_at, _completed_at) do

@@ -65,6 +65,7 @@ defmodule TracyWeb.Router do
       live "/boardroom", BoardroomLive
       # V2 oversight dashboard — single-page grid of project cards.
       live "/projects",     ProjectsLive
+      live "/memory",       MemoryLive
       # Master/detail plans surface — same LiveView handles list (:index) and
       # selected-plan preview (:show) via push_patch navigation.
       live "/plans",        PlanLive.Index, :index
